@@ -1,0 +1,6 @@
+{
+  "name": "OWL ALGO DATABASE",
+  "description": "Secured Administrative Dashboard & High-Performance Trader Database engineered by IqwanEngine for OWL FX.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
