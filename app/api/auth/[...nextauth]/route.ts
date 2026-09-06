@@ -3,7 +3,7 @@
 export async function GET(req: Request) {
   const url = new URL(req.url);
   const email = url.searchParams.get('email') || '';
-  const rawList = process.env.ALLOWED_EMAILS || 'hairuliqwan352@gmail.com,admin@owlfx.my,iqwan@owlfx.my,hairul@owlfx.my';
+  const rawList = process.env.ADMIN_ALLOWED_EMAILS || '';
   const allowed = rawList.split(',').map(e => e.trim().toLowerCase()).filter(Boolean);
 
   const isWhitelisted = email ? allowed.includes(email.toLowerCase()) : false;
@@ -19,7 +19,7 @@ export async function POST(req: Request) {
   try {
     const body = await req.json();
     const email = (body?.email || '').trim().toLowerCase();
-    const rawList = process.env.ALLOWED_EMAILS || 'hairuliqwan352@gmail.com,admin@owlfx.my,iqwan@owlfx.my,hairul@owlfx.my';
+    const rawList = process.env.ADMIN_ALLOWED_EMAILS || '';
     const allowed = rawList.split(',').map(e => e.trim().toLowerCase()).filter(Boolean);
 
     if (!email) {

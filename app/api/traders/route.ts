@@ -3,8 +3,8 @@
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
-const MY_ENDPOINT = 'https://script.google.com/macros/s/AKfycbxPr5ErC0hvMnxmM477ekAmFis9RAp44OtP55g2eKPsUdc7_bltM5G7ooSS0AFnmvUC/exec?action=fetch';
-const ID_ENDPOINT = 'https://script.google.com/macros/s/AKfycbxK0G2aOhYNy5WalUQjImp4aReiTGfgEEKBR61Q7Lunjm_zCybglbpPU1iVL5J8r--z/exec?action=fetch';
+const MY_ENDPOINT = process.env.GOOGLE_SHEETS_MY_ENDPOINT || '';
+const ID_ENDPOINT = process.env.GOOGLE_SHEETS_ID_ENDPOINT || '';
 
 async function fetchGAS(url: string) {
   try {

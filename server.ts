@@ -12,10 +12,10 @@ const PORT = 3000;
 
 app.use(express.json());
 
-const MY_ENDPOINT = 'https://script.google.com/macros/s/AKfycbxPr5ErC0hvMnxmM477ekAmFis9RAp44OtP55g2eKPsUdc7_bltM5G7ooSS0AFnmvUC/exec?action=fetch';
-const ID_ENDPOINT = 'https://script.google.com/macros/s/AKfycbxK0G2aOhYNy5WalUQjImp4aReiTGfgEEKBR61Q7Lunjm_zCybglbpPU1iVL5J8r--z/exec?action=fetch';
+const MY_ENDPOINT = process.env.GOOGLE_SHEETS_MY_ENDPOINT || '';
+const ID_ENDPOINT = process.env.GOOGLE_SHEETS_ID_ENDPOINT || '';
 
-const DEFAULT_ALLOWED_EMAILS = 'hairuliqwan352@gmail.com,admin@owlfx.my,iqwan@owlfx.my,boyintraderz@gmail.com';
+const DEFAULT_ALLOWED_EMAILS = process.env.ADMIN_ALLOWED_EMAILS || '';
 
 // In-memory cache & fallback retention for high-performance low-latency response
 interface CachePayload {
@@ -704,7 +704,7 @@ app.post('/api/traders/delete', async (req, res) => {
 // 3. Authentication & Whitelist Verification Endpoints
 app.get('/api/auth/whitelist', (req, res) => {
   const email = (req.query.email as string || '').trim().toLowerCase();
-  const rawList = process.env.ALLOWED_EMAILS || DEFAULT_ALLOWED_EMAILS;
+  const rawList = process.env.ADMIN_ALLOWED_EMAILS || DEFAULT_ALLOWED_EMAILS;
   const allowed = rawList.split(',').map(e => e.trim().toLowerCase()).filter(Boolean);
 
   const isWhitelisted = allowed.includes(email);
@@ -718,7 +718,7 @@ app.get('/api/auth/whitelist', (req, res) => {
 app.post('/api/auth/session', (req, res) => {
   const { email } = req.body || {};
   const normalizedEmail = (email || '').trim().toLowerCase();
-  const rawList = process.env.ALLOWED_EMAILS || DEFAULT_ALLOWED_EMAILS;
+  const rawList = process.env.ADMIN_ALLOWED_EMAILS || DEFAULT_ALLOWED_EMAILS;
   const allowed = rawList.split(',').map(e => e.trim().toLowerCase()).filter(Boolean);
 
   if (!normalizedEmail) {
@@ -730,7 +730,7 @@ app.post('/api/auth/session', (req, res) => {
     return res.status(403).json({
       success: false,
       error: 'Unauthorized Email',
-      message: 'Access Denied: Your email is not whitelisted in ALLOWED_EMAILS.',
+      message: 'Access Denied: Your email is not whitelisted in ADMIN_ALLOWED_EMAILS.',
       email: normalizedEmail
     });
   }
