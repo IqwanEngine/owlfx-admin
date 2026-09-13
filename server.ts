@@ -15,6 +15,11 @@ app.use(express.json());
 const MY_ENDPOINT = process.env.GOOGLE_SHEETS_MY_ENDPOINT || '';
 const ID_ENDPOINT = process.env.GOOGLE_SHEETS_ID_ENDPOINT || '';
 
+function getCleanUrl(endpoint: string) {
+  if (!endpoint) return '';
+  return endpoint.split('?')[0] + '?action=fetch';
+}
+
 const DEFAULT_ALLOWED_EMAILS = process.env.ADMIN_ALLOWED_EMAILS || '';
 
 // In-memory cache & fallback retention for high-performance low-latency response
@@ -30,12 +35,15 @@ let lastKnownMY: any[] = [];
 let lastKnownID: any[] = [];
 
 async function fetchFromEndpointWithRetry(url: string, country: 'MY' | 'ID', retries = 2): Promise<any[]> {
+  const cleanUrl = getCleanUrl(url);
+  if (!cleanUrl) return [];
+
   for (let attempt = 0; attempt <= retries; attempt++) {
     try {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 40000);
 
-      const response = await fetch(url, {
+      const response = await fetch(cleanUrl, {
         signal: controller.signal,
         redirect: 'follow',
         headers: {

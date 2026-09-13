@@ -6,9 +6,17 @@ export const revalidate = 0;
 const MY_ENDPOINT = process.env.GOOGLE_SHEETS_MY_ENDPOINT || '';
 const ID_ENDPOINT = process.env.GOOGLE_SHEETS_ID_ENDPOINT || '';
 
+function getCleanUrl(endpoint: string) {
+  if (!endpoint) return '';
+  return endpoint.split('?')[0] + '?action=fetch';
+}
+
 async function fetchGAS(url: string) {
+  const cleanUrl = getCleanUrl(url);
+  if (!cleanUrl) return [];
+  
   try {
-    const res = await fetch(url, {
+    const res = await fetch(cleanUrl, {
       cache: 'no-store',
       headers: { 'Accept': 'application/json' }
     });
