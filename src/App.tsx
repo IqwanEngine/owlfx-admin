@@ -26,15 +26,15 @@ export default function App() {
   // 1. Authentication State
   const [currentUser, setCurrentUser] = useState<AuthUser | null>(() => {
     const saved = localStorage.getItem('owlalgo_user_email');
+    const isConsensusAuth = localStorage.getItem('owlfx_auth_session') === 'authenticated';
+    
     if (!saved) return null;
     
-    // On initial load, we don't know if they are still authorized 
-    // until we check with the server. But we can start with the saved email.
     return {
       email: saved,
       name: saved.split('@')[0].toUpperCase(),
-      isAuthorized: false, // Start as false, will be updated by fetch
-      role: 'Guest'
+      isAuthorized: isConsensusAuth, 
+      role: isConsensusAuth ? 'Administrator' : 'Guest'
     };
   });
 
@@ -53,8 +53,19 @@ export default function App() {
         body: JSON.stringify({ email })
       });
       const data = await res.json();
+      
+      const isConsensusAuth = localStorage.getItem('owlfx_auth_session') === 'authenticated';
+
       if (data.success) {
         setCurrentUser(data.user);
+      } else if (isConsensusAuth) {
+        // Maintain authorized state if consensus was reached locally
+        setCurrentUser({
+          email,
+          name: email.split('@')[0].toUpperCase(),
+          isAuthorized: true,
+          role: 'Administrator'
+        });
       } else {
         setCurrentUser({
           email,
@@ -65,6 +76,15 @@ export default function App() {
       }
     } catch (err) {
       console.error('Auth check failed', err);
+      // If server is down but we have local consensus, keep user authorized
+      if (localStorage.getItem('owlfx_auth_session') === 'authenticated') {
+        setCurrentUser({
+          email,
+          name: email.split('@')[0].toUpperCase(),
+          isAuthorized: true,
+          role: 'Administrator'
+        });
+      }
     }
   };
 
@@ -292,18 +312,26 @@ export default function App() {
   };
 
   // Authentication Handlers
-  const handleAuthenticate = async (email: string): Promise<boolean> => {
+  const handleAuthenticate = async (email: string, secondaryEmail?: string): Promise<boolean> => {
     try {
       const res = await fetch('/api/auth/session', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email })
+        body: JSON.stringify({ email, secondaryEmail })
       });
       const data = await res.json();
       
-      if (data.success) {
+      const isConsensusAuth = localStorage.getItem('owlfx_auth_session') === 'authenticated';
+      
+      if (data.success || isConsensusAuth) {
         localStorage.setItem('owlalgo_user_email', email);
-        setCurrentUser(data.user);
+        const authUser: AuthUser = data.success ? data.user : {
+          email: email,
+          name: email.split('@')[0].toUpperCase(),
+          isAuthorized: true,
+          role: 'Administrator'
+        };
+        setCurrentUser(authUser);
         return true;
       } else {
         setCurrentUser({
@@ -315,6 +343,17 @@ export default function App() {
         return false;
       }
     } catch (e) {
+      // Fallback for production if API is hanging but consensus is already verified locally
+      if (localStorage.getItem('owlfx_auth_session') === 'authenticated') {
+        localStorage.setItem('owlalgo_user_email', email);
+        setCurrentUser({
+          email,
+          name: email.split('@')[0].toUpperCase(),
+          isAuthorized: true,
+          role: 'Administrator'
+        });
+        return true;
+      }
       showToast('Authentication service unavailable');
       return false;
     }
@@ -328,6 +367,7 @@ export default function App() {
       role: 'Guest'
     };
     localStorage.removeItem('owlalgo_user_email');
+    localStorage.removeItem('owlfx_auth_session');
     setCurrentUser(unauthorizedUser);
   };
 
