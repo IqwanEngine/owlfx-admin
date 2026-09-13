@@ -3,7 +3,6 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { 
   TraderRecord, 
-  TradersApiResponse, 
   CountryMetrics, 
   AuthUser,
   MultiColumnFilterState
@@ -17,7 +16,7 @@ import { DeleteConfirmModal } from './components/DeleteConfirmModal';
 import { AppsScriptModal } from './components/AppsScriptModal';
 import { AccessDenied403 } from './components/AccessDenied403';
 import { AuthModal } from './components/AuthModal';
-import { isEmailWhitelisted, calculateMetrics } from './utils/formatters';
+import { calculateMetrics, formatLiveTimestamp } from './utils/formatters';
 import { AlertTriangle, CheckCircle2 } from 'lucide-react';
 
 const SYNC_INTERVAL_SECONDS = 15;
@@ -25,52 +24,60 @@ const SYNC_INTERVAL_SECONDS = 15;
 export default function App() {
   // 1. Authentication State
   const [currentUser, setCurrentUser] = useState<AuthUser | null>(() => {
-    const saved = localStorage.getItem('owlalgo_user_email');
-    const isConsensusAuth = localStorage.getItem('owlfx_auth_session') === 'authenticated';
-    
-    if (!saved) return null;
-    
-    return {
-      email: saved,
-      name: saved.split('@')[0].toUpperCase(),
-      isAuthorized: isConsensusAuth, 
-      role: isConsensusAuth ? 'Administrator' : 'Guest'
-    };
+    try {
+      const saved = localStorage.getItem('owlalgo_user_email');
+      const isConsensusAuth = localStorage.getItem('owlfx_auth_session') === 'authenticated';
+      
+      if (!saved && !isConsensusAuth) return null;
+      
+      const email = saved || 'admin_session@owlfx.my';
+      return {
+        email: email,
+        name: (email.split('@')[0] || 'ADMIN').toUpperCase(),
+        isAuthorized: isConsensusAuth, 
+        role: isConsensusAuth ? 'Administrator' : 'Guest'
+      };
+    } catch (e) {
+      return null;
+    }
   });
 
   const checkAuth = useCallback(async (email: string) => {
+    if (!email) return;
     try {
       const res = await fetch(`/api/auth/session`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email })
       });
+      if (!res.ok) throw new Error('Auth fetch failed');
       const data = await res.json();
       
       const isConsensusAuth = localStorage.getItem('owlfx_auth_session') === 'authenticated';
 
-      if (data.success) {
+      if (data && data.success) {
         setCurrentUser(data.user);
       } else if (isConsensusAuth) {
         setCurrentUser({
           email,
-          name: email.split('@')[0].toUpperCase(),
+          name: (email.split('@')[0] || 'ADMIN').toUpperCase(),
           isAuthorized: true,
           role: 'Administrator'
         });
       } else {
         setCurrentUser({
           email,
-          name: email.split('@')[0].toUpperCase(),
+          name: (email.split('@')[0] || 'GUEST').toUpperCase(),
           isAuthorized: false,
           role: 'Unauthorized User'
         });
       }
     } catch (err) {
-      if (localStorage.getItem('owlfx_auth_session') === 'authenticated') {
+      const isConsensusAuth = localStorage.getItem('owlfx_auth_session') === 'authenticated';
+      if (isConsensusAuth) {
         setCurrentUser({
           email,
-          name: email.split('@')[0].toUpperCase(),
+          name: (email.split('@')[0] || 'ADMIN').toUpperCase(),
           isAuthorized: true,
           role: 'Administrator'
         });
@@ -84,10 +91,20 @@ export default function App() {
     }
   }, [checkAuth, currentUser?.email]);
 
+  // Synchronize route URL
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const currentPath = window.location.pathname;
+      if (currentPath === '/' || currentPath === '') {
+        window.history.replaceState(null, '', '/owlalgo-access-secured');
+      }
+    }
+  }, []);
+
   const [isAuthModalOpen, setIsAuthModalOpen] = useState<boolean>(false);
   const [isAppsScriptModalOpen, setIsAppsScriptModalOpen] = useState<boolean>(false);
 
-  // 2. Traders Data & Sync State (Divided by Region for Independent Async Loading)
+  // 2. Traders Data State
   const [malaysiaData, setMalaysiaData] = useState<TraderRecord[]>([]);
   const [indonesiaData, setIndonesiaData] = useState<TraderRecord[]>([]);
   const [malaysiaMetrics, setMalaysiaMetrics] = useState<CountryMetrics | null>(null);
@@ -122,19 +139,18 @@ export default function App() {
   const [myFilters, setMyFilters] = useState<MultiColumnFilterState>({ ...initialFilterState });
   const [idFilters, setIdFilters] = useState<MultiColumnFilterState>({ ...initialFilterState });
 
-  // 4. Action Modals State
+  // 4. UI Actions
   const [selectedTrader, setSelectedTrader] = useState<TraderRecord | null>(null);
   const [verifyingId, setVerifyingId] = useState<string | null>(null);
   const [deletingTrader, setDeletingTrader] = useState<TraderRecord | null>(null);
   const [isDeleting, setIsDeleting] = useState<boolean>(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
-  const showToast = (msg: string) => {
+  const showToast = useCallback((msg: string) => {
     setToastMessage(msg);
     setTimeout(() => setToastMessage(null), 3500);
-  };
+  }, []);
 
-  // Fetch data function (Independent Regional Fetching)
   const fetchTradersData = useCallback(async (isManualRefresh = false) => {
     setIsSyncing(true);
     setSyncError(null);
@@ -154,10 +170,10 @@ export default function App() {
           const metrics = calculateMetrics(traders, region);
 
           if (region === 'MY') {
-            setMalaysiaData(traders);
+            setMalaysiaData(Array.isArray(traders) ? traders : []);
             setMalaysiaMetrics(metrics);
           } else {
-            setIndonesiaData(traders);
+            setIndonesiaData(Array.isArray(traders) ? traders : []);
             setIndonesiaMetrics(metrics);
           }
         }
@@ -177,12 +193,12 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    const allTraders = [...malaysiaData, ...indonesiaData];
+    const allTraders = [...(malaysiaData || []), ...(indonesiaData || [])];
     const allDates = allTraders
-      .map(t => t.registerDate)
+      .map(t => t?.registerDate)
       .filter(Boolean)
       .map(d => new Date(d))
-      .filter(d => !isNaN(d.getTime()))
+      .filter(d => d && !isNaN(d.getTime()))
       .sort((a, b) => b.getTime() - a.getTime());
 
     if (allDates.length > 0) {
@@ -215,6 +231,7 @@ export default function App() {
   }, [fetchTradersData]);
 
   const handleVerifyTrader = async (trader: TraderRecord) => {
+    if (!trader) return;
     setVerifyingId(trader.id);
 
     const now = new Date();
@@ -229,11 +246,10 @@ export default function App() {
       hour12: false
     });
 
-    // Optimistic Update
     if (trader.country === 'MY') {
-      setMalaysiaData(prev => prev.map(t => t.id === trader.id ? { ...t, lastUpdateFormatted: currentTimestamp } : t));
+      setMalaysiaData(prev => (prev || []).map(t => t.id === trader.id ? { ...t, lastUpdateFormatted: currentTimestamp } : t));
     } else {
-      setIndonesiaData(prev => prev.map(t => t.id === trader.id ? { ...t, lastUpdateFormatted: currentTimestamp } : t));
+      setIndonesiaData(prev => (prev || []).map(t => t.id === trader.id ? { ...t, lastUpdateFormatted: currentTimestamp } : t));
     }
 
     try {
@@ -259,6 +275,7 @@ export default function App() {
   };
 
   const handlePromptDeleteTrader = (trader: TraderRecord) => {
+    setSelectedTrader(null);
     setDeletingTrader(trader);
   };
 
@@ -268,9 +285,9 @@ export default function App() {
     const target = deletingTrader;
 
     if (target.country === 'MY') {
-      setMalaysiaData(prev => prev.filter(t => t.id !== target.id));
+      setMalaysiaData(prev => (prev || []).filter(t => t.id !== target.id));
     } else {
-      setIndonesiaData(prev => prev.filter(t => t.id !== target.id));
+      setIndonesiaData(prev => (prev || []).filter(t => t.id !== target.id));
     }
 
     try {
@@ -281,7 +298,7 @@ export default function App() {
           action: 'delete_trader',
           country: target.country,
           rowIndex: target.rowIndex,
-          valetaxId: target.valetaxId
+          valetax_id: target.valetaxId
         })
       });
 
@@ -305,11 +322,11 @@ export default function App() {
       const data = await res.json();
       const isConsensusAuth = localStorage.getItem('owlfx_auth_session') === 'authenticated';
       
-      if (data.success || isConsensusAuth) {
+      if ((data && data.success) || isConsensusAuth) {
         localStorage.setItem('owlalgo_user_email', email);
-        const authUser: AuthUser = data.success ? data.user : {
+        const authUser: AuthUser = (data && data.success) ? data.user : {
           email,
-          name: email.split('@')[0].toUpperCase(),
+          name: (email.split('@')[0] || 'ADMIN').toUpperCase(),
           isAuthorized: true,
           role: 'Administrator'
         };
@@ -318,10 +335,12 @@ export default function App() {
       }
       return false;
     } catch (e) {
-      if (localStorage.getItem('owlfx_auth_session') === 'authenticated') {
+      const isConsensusAuth = localStorage.getItem('owlfx_auth_session') === 'authenticated';
+      if (isConsensusAuth) {
+        localStorage.setItem('owlalgo_user_email', email);
         setCurrentUser({
           email,
-          name: email.split('@')[0].toUpperCase(),
+          name: (email.split('@')[0] || 'ADMIN').toUpperCase(),
           isAuthorized: true,
           role: 'Administrator'
         });
@@ -361,16 +380,16 @@ export default function App() {
 
   const availableAccountTypes = useMemo(() => {
     const set = new Set<string>();
-    [...malaysiaData, ...indonesiaData].forEach(t => {
-      if (t.accountType && t.accountType !== '-') set.add(t.accountType);
+    [...(malaysiaData || []), ...(indonesiaData || [])].forEach(t => {
+      if (t && t.accountType && t.accountType !== '-') set.add(t.accountType);
     });
     return Array.from(set).sort();
   }, [malaysiaData, indonesiaData]);
 
   const availableMyPartnerEmails = useMemo(() => {
     const set = new Set<string>();
-    malaysiaData.forEach(t => {
-      if (t.directPartnerEmail && t.directPartnerEmail !== '-' && t.directPartnerEmail.trim() !== '') {
+    (malaysiaData || []).forEach(t => {
+      if (t && t.directPartnerEmail && t.directPartnerEmail !== '-' && t.directPartnerEmail.trim() !== '') {
         set.add(t.directPartnerEmail.trim().toLowerCase());
       }
     });
@@ -379,8 +398,8 @@ export default function App() {
 
   const availableIdPartnerEmails = useMemo(() => {
     const set = new Set<string>();
-    indonesiaData.forEach(t => {
-      if (t.directPartnerEmail && t.directPartnerEmail !== '-' && t.directPartnerEmail.trim() !== '') {
+    (indonesiaData || []).forEach(t => {
+      if (t && t.directPartnerEmail && t.directPartnerEmail !== '-' && t.directPartnerEmail.trim() !== '') {
         set.add(t.directPartnerEmail.trim().toLowerCase());
       }
     });
@@ -388,6 +407,7 @@ export default function App() {
   }, [indonesiaData]);
 
   const evaluateMultiColumnFilter = (t: TraderRecord, filterState: MultiColumnFilterState): boolean => {
+    if (!t) return false;
     if (filterState.dateFrom || filterState.dateTo) {
       if (!t.registerDate) return false;
       const d = new Date(t.registerDate);
@@ -398,13 +418,13 @@ export default function App() {
     }
     const minVal = filterState.minBalance !== '' ? parseFloat(filterState.minBalance) : null;
     const maxVal = filterState.maxBalance !== '' ? parseFloat(filterState.maxBalance) : null;
-    if (minVal !== null && !isNaN(minVal) && t.balance < minVal) return false;
-    if (maxVal !== null && !isNaN(maxVal) && t.balance > maxVal) return false;
-    if (filterState.accountType && t.accountType.toLowerCase() !== filterState.accountType.toLowerCase()) return false;
+    if (minVal !== null && !isNaN(minVal) && (t.balance || 0) < minVal) return false;
+    if (maxVal !== null && !isNaN(maxVal) && (t.balance || 0) > maxVal) return false;
+    if (filterState.accountType && (t.accountType || '').toLowerCase() !== filterState.accountType.toLowerCase()) return false;
     if (filterState.partnerEmail && !(t.directPartnerEmail || '').toLowerCase().includes(filterState.partnerEmail.toLowerCase().trim())) return false;
     
     if (filterState.status) {
-      const s = t.status.toUpperCase().trim();
+      const s = (t.status || '').toUpperCase().trim();
       const f = filterState.status.toUpperCase().trim();
       if (f === 'ACTIVE') { if (s !== 'ACTIVE' && s !== 'VALID' && !s.includes('VIP')) return false; }
       else if (f === 'LOW BAL') { if (!s.includes('LOW')) return false; }
@@ -416,12 +436,17 @@ export default function App() {
   };
 
   const filterGlobalTrader = useCallback((t: TraderRecord): boolean => {
+    if (!t) return false;
     if (searchTerm.trim()) {
       const q = searchTerm.toLowerCase().trim();
-      if (!t.traderName.toLowerCase().includes(q) && !t.contactNumber.toLowerCase().includes(q) && !t.registerEmail.toLowerCase().includes(q) && !t.valetaxId.toLowerCase().includes(q)) return false;
+      const matchName = (t.traderName || '').toLowerCase().includes(q);
+      const matchContact = (t.contactNumber || '').toLowerCase().includes(q);
+      const matchEmail = (t.registerEmail || '').toLowerCase().includes(q);
+      const matchValetax = (t.valetaxId || '').toLowerCase().includes(q);
+      if (!matchName && !matchContact && !matchEmail && !matchValetax) return false;
     }
     if (statusFilter) {
-      const s = t.status.toUpperCase().trim();
+      const s = (t.status || '').toUpperCase().trim();
       const f = statusFilter.toUpperCase().trim();
       if (f === 'ACTIVE') { if (s !== 'ACTIVE' && s !== 'VALID' && !s.includes('VIP')) return false; }
       else if (f === 'LOW BAL') { if (!s.includes('LOW')) return false; }
@@ -433,13 +458,16 @@ export default function App() {
 
   const filteredMalaysia = useMemo(() => {
     if (countryFilter === 'ID') return [];
-    return malaysiaData.filter(t => filterGlobalTrader(t) && evaluateMultiColumnFilter(t, myFilters));
+    return (malaysiaData || []).filter(t => filterGlobalTrader(t) && evaluateMultiColumnFilter(t, myFilters));
   }, [malaysiaData, filterGlobalTrader, countryFilter, myFilters]);
 
   const filteredIndonesia = useMemo(() => {
     if (countryFilter === 'MY') return [];
-    return indonesiaData.filter(t => filterGlobalTrader(t) && evaluateMultiColumnFilter(t, idFilters));
+    return (indonesiaData || []).filter(t => filterGlobalTrader(t) && evaluateMultiColumnFilter(t, idFilters));
   }, [indonesiaData, filterGlobalTrader, countryFilter, idFilters]);
+
+  const totalFiltered = useMemo(() => filteredMalaysia.length + filteredIndonesia.length, [filteredMalaysia, filteredIndonesia]);
+  const totalUnfiltered = useMemo(() => malaysiaData.length + indonesiaData.length, [malaysiaData, indonesiaData]);
 
   if (!currentUser) {
     return (
@@ -463,7 +491,7 @@ export default function App() {
       <div className="fixed inset-0 pointer-events-none opacity-5 bg-[radial-gradient(circle_at_50%_-20%,#D4A017,transparent_70%)] z-0" />
       <Header
         latestRegistrationDate={latestRegistrationDate}
-        lastUpdateByEngine={new Date().toLocaleString('en-GB', { timeZone: 'Asia/Kuala_Lumpur', day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) + ' (MYT)'}
+        lastUpdateByEngine={formatLiveTimestamp()}
         isSyncing={isSyncing}
         onRefresh={() => fetchTradersData(true)}
         nextSyncSeconds={nextSyncSeconds}
@@ -486,7 +514,20 @@ export default function App() {
           </div>
         )}
         <MetricsCard malaysiaMetrics={malaysiaMetrics} indonesiaMetrics={indonesiaMetrics} activeStatusFilter={statusFilter} activeCountryFilter={countryFilter} onFilterStatus={handleFilterStatus} />
-        <SearchFilter searchTerm={searchTerm} onSearchChange={setSearchTerm} activeStatusFilter={statusFilter} onFilterStatus={handleFilterStatus} onResetAllFilters={handleResetAllFilters} totalRecords={filteredMalaysia.length + filteredIndonesia.length} totalUnfiltered={malaysiaData.length + indonesiaData.length} isSyncing={isSyncing} />
+        
+        <SearchFilter 
+          searchTerm={searchTerm} 
+          onSearchChange={setSearchTerm} 
+          statusFilter={statusFilter} 
+          onStatusFilterChange={setStatusFilter} 
+          accountTypeFilter={accountTypeFilter}
+          onAccountTypeFilterChange={setAccountTypeFilter}
+          availableAccountTypes={availableAccountTypes}
+          totalFilteredCount={totalFiltered} 
+          totalUnfilteredCount={totalUnfiltered} 
+          onResetAll={handleResetAllFilters}
+        />
+
         <div className="space-y-8">
           <TradersTable traders={filteredMalaysia} countryCode="MY" isInitialLoading={loadingMY} totalUnfilteredCount={malaysiaData.length} verifyingId={verifyingId} onVerifyTrader={handleVerifyTrader} onSelectTrader={setSelectedTrader} onPromptDeleteTrader={handlePromptDeleteTrader} filterState={myFilters} onFilterChange={setMyFilters} onResetFilters={() => setMyFilters({ ...initialFilterState })} availableAccountTypes={availableAccountTypes} availablePartnerEmails={availableMyPartnerEmails} />
           <TradersTable traders={filteredIndonesia} countryCode="ID" isInitialLoading={loadingID} totalUnfilteredCount={indonesiaData.length} verifyingId={verifyingId} onVerifyTrader={handleVerifyTrader} onSelectTrader={setSelectedTrader} onPromptDeleteTrader={handlePromptDeleteTrader} filterState={idFilters} onFilterChange={setIdFilters} onResetFilters={() => setIdFilters({ ...initialFilterState })} availableAccountTypes={availableAccountTypes} availablePartnerEmails={availableIdPartnerEmails} />

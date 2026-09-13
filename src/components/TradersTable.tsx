@@ -7,7 +7,7 @@ import {
   Copy, 
   MessageCircle, 
   Loader2, 
-  ShieldAlert,
+  AlertCircle,
 } from 'lucide-react';
 import { TraderRecord, MultiColumnFilterState } from '../types';
 import { formatCurrency, generateWhatsAppLink } from '../utils/formatters';
@@ -34,10 +34,10 @@ interface TradersTableProps {
 const ITEMS_PER_PAGE = 40;
 
 export const TradersTable: React.FC<TradersTableProps> = ({
-  traders,
+  traders = [],
   countryCode,
   isInitialLoading,
-  totalUnfilteredCount,
+  totalUnfilteredCount = 0,
   verifyingId,
   onVerifyTrader,
   onSelectTrader,
@@ -45,30 +45,35 @@ export const TradersTable: React.FC<TradersTableProps> = ({
   filterState,
   onFilterChange,
   onResetFilters,
-  availableAccountTypes,
-  availablePartnerEmails
+  availableAccountTypes = [],
+  availablePartnerEmails = []
 }) => {
   const [currentPage, setCurrentPage] = useState(1);
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
-  const totalPages = Math.ceil(traders.length / ITEMS_PER_PAGE) || 1;
+  const safeTraders = Array.isArray(traders) ? traders : [];
+  const totalPages = Math.ceil(safeTraders.length / ITEMS_PER_PAGE) || 1;
   const validCurrentPage = Math.min(currentPage, totalPages);
   
   const startIndex = (validCurrentPage - 1) * ITEMS_PER_PAGE;
-  const currentTraders = traders.slice(startIndex, startIndex + ITEMS_PER_PAGE);
+  const currentTraders = safeTraders.slice(startIndex, startIndex + ITEMS_PER_PAGE);
 
   const handleCopy = (text: string, id: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    navigator.clipboard.writeText(text);
-    setCopiedId(id);
-    setTimeout(() => setCopiedId(null), 2000);
+    try {
+      navigator.clipboard.writeText(text);
+      setCopiedId(id);
+      setTimeout(() => setCopiedId(null), 2000);
+    } catch (err) {
+      console.warn('Clipboard copy failed');
+    }
   };
 
   const handlePrevPage = () => setCurrentPage(prev => Math.max(prev - 1, 1));
   const handleNextPage = () => setCurrentPage(prev => Math.min(prev + 1, totalPages));
 
   const getStatusBadge = (status: string) => {
-    const s = status.toUpperCase().trim();
+    const s = (status || "").toUpperCase().trim();
     let styles = "bg-slate-500/10 text-slate-400 border-slate-500/20";
     
     if (s === 'ACTIVE' || s === 'VALID') styles = "bg-emerald-500/10 text-emerald-400 border-emerald-500/20";
@@ -80,7 +85,7 @@ export const TradersTable: React.FC<TradersTableProps> = ({
 
     return (
       <span className={`px-2 py-0.5 rounded-xs border text-[8px] font-bold tracking-tighter uppercase ${styles}`}>
-        {s}
+        {s || 'UNKNOWN'}
       </span>
     );
   };
@@ -97,7 +102,7 @@ export const TradersTable: React.FC<TradersTableProps> = ({
             {regionHeading}
           </h3>
           <span className="text-[9px] text-[#E2E8F0]/40 font-mono">
-            ({traders.length.toLocaleString()} records)
+            ({safeTraders.length.toLocaleString()} records)
           </span>
         </div>
 
@@ -131,7 +136,7 @@ export const TradersTable: React.FC<TradersTableProps> = ({
         onResetFilters={onResetFilters}
         availableAccountTypes={availableAccountTypes}
         availablePartnerEmails={availablePartnerEmails}
-        totalFilteredCount={traders.length}
+        totalFilteredCount={safeTraders.length}
         totalUnfilteredCount={totalUnfilteredCount}
       />
 
@@ -156,7 +161,6 @@ export const TradersTable: React.FC<TradersTableProps> = ({
 
           <tbody className="font-mono divide-y divide-[#3E2D17]/30">
             {isInitialLoading ? (
-              // Skeleton Table Loading
               Array.from({ length: 8 }).map((_, idx) => (
                 <tr key={`skeleton-${idx}`} className="animate-pulse border-b border-[#3E2D17]/20">
                   <td className="px-2 py-3 text-center"><div className="h-6 w-6 bg-[#D4A017]/5 rounded mx-auto" /></td>
@@ -173,30 +177,31 @@ export const TradersTable: React.FC<TradersTableProps> = ({
                   <td className="px-3 py-3"><div className="h-3 w-24 bg-white/5 rounded" /></td>
                 </tr>
               ))
-            ) : traders.length === 0 ? (
+            ) : safeTraders.length === 0 ? (
               <tr>
                 <td colSpan={12} className="py-10 text-center text-[#71717A]">
                   <div className="flex flex-col items-center justify-center gap-1.5">
-                    <ShieldAlert className="w-5 h-5 text-[#71717A]" />
+                    <AlertCircle className="w-5 h-5 text-[#71717A]" />
                     <p className="text-[11px] font-semibold text-[#A1A1AA]">No matching records found in this region</p>
                   </div>
                 </td>
               </tr>
             ) : (
               currentTraders.map((t) => {
+                if (!t) return null;
                 const isVerifyingThis = verifyingId === t.id;
-                const isChecked = t.lastUpdateFormatted !== '-' && t.lastUpdateFormatted !== '';
+                const isChecked = t.lastUpdateFormatted && t.lastUpdateFormatted !== '-' && t.lastUpdateFormatted !== '';
 
                 return (
                   <tr
                     key={t.id}
-                    onClick={() => onSelectTrader(t)}
+                    onClick={() => onSelectTrader && onSelectTrader(t)}
                     className="border-b border-[#3E2D17]/40 hover:bg-[#D4A017]/5 transition-colors cursor-pointer group"
                   >
                     <td className="px-2 py-1.5 text-center whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
                       <div className="flex items-center justify-center gap-1">
                         <button
-                          onClick={(e) => { e.stopPropagation(); onVerifyTrader(t); }}
+                          onClick={(e) => { e.stopPropagation(); onVerifyTrader && onVerifyTrader(t); }}
                           disabled={isVerifyingThis}
                           title={isChecked ? `Reviewed: ${t.lastUpdateFormatted}. Click to update.` : 'Update Review Time in Col W'}
                           className={`w-6 h-6 rounded-xs flex items-center justify-center transition-all cursor-pointer border ${
@@ -208,7 +213,7 @@ export const TradersTable: React.FC<TradersTableProps> = ({
                           {isVerifyingThis ? <Loader2 className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3 stroke-[2.5]" />}
                         </button>
                         <button
-                          onClick={(e) => { e.stopPropagation(); onPromptDeleteTrader(t); }}
+                          onClick={(e) => { e.stopPropagation(); onPromptDeleteTrader && onPromptDeleteTrader(t); }}
                           title={`Delete Record (Row #${t.rowIndex})`}
                           className="w-6 h-6 rounded-xs flex items-center justify-center bg-[#0F0E0A] border border-rose-600/40 text-rose-400 hover:bg-rose-600 hover:text-white transition-all cursor-pointer"
                         >
@@ -276,7 +281,7 @@ export const TradersTable: React.FC<TradersTableProps> = ({
 
       <div className="bg-[#050505] px-4 py-2 border-t border-[#3E2D17] flex flex-col sm:flex-row items-center justify-between text-[9px] font-mono text-[#D4A017]/60 uppercase gap-2">
         <span>
-          Showing entries {traders.length > 0 ? startIndex + 1 : 0} to {Math.min(startIndex + ITEMS_PER_PAGE, traders.length)} of {traders.length} records
+          Showing entries {safeTraders.length > 0 ? startIndex + 1 : 0} to {Math.min(startIndex + ITEMS_PER_PAGE, safeTraders.length)} of {safeTraders.length} records
         </span>
         <div className="flex items-center gap-1 text-white">
           <span>Page {validCurrentPage} of {totalPages}</span>
