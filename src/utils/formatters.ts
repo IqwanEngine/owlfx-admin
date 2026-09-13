@@ -86,20 +86,18 @@ export function generateWhatsAppLink(
  * Clean and safely parse balance, equity, credit, and margin values from raw inputs.
  * Strips thousand-separator commas, currency symbols, and handles Cent / N/A values.
  */
-export function sanitizeBalance(raw: any, accountType: string = '', currency: string = ''): number {
-  if (raw === undefined || raw === null) return 0;
-  if (typeof raw === 'number') {
-    return isNaN(raw) ? 0 : raw;
+export function sanitizeBalance(val: any): number {
+  if (val === undefined || val === null || val === "" || val === "-" || val === "undefined") return 0;
+  if (typeof val === 'number') {
+    return isNaN(val) ? 0 : val;
   }
-  const str = String(raw).trim();
+  const str = String(val).trim();
   if (str === '' || str === '-' || /n\/?a/i.test(str)) return 0;
 
   // Remove thousand commas and any non-numeric characters except minus and period
   const cleaned = str.replace(/,/g, '').replace(/[^0-9.-]/g, '');
   const num = parseFloat(cleaned);
-  if (isNaN(num)) return 0;
-
-  return num;
+  return isNaN(num) ? 0 : num;
 }
 
 export function normalizeTrader(raw: RawTrader, country: 'MY' | 'ID', index: number): TraderRecord {
@@ -209,8 +207,7 @@ export function normalizeTrader(raw: RawTrader, country: 'MY' | 'ID', index: num
 
 export function calculateTotalBalanceUSD(traders: { balance?: any; accountType?: string; account_type?: string; currency?: string }[]): number {
   return traders.reduce((acc, trader) => {
-    let rawStr = (trader.balance || "").toString().replace(/,/g, '').trim();
-    let num = parseFloat(rawStr) || 0;
+    let num = sanitizeBalance(trader.balance);
     
     const accType = (trader.accountType || trader.account_type || "").toLowerCase();
     const curr = (trader.currency || "").toUpperCase();
@@ -243,27 +240,26 @@ export function calculateMetrics(traders: TraderRecord[], country: 'MY' | 'ID'):
   const totalBalanceUSD = calculateTotalBalanceUSD(traders);
 
   for (const t of traders) {
-    const normalizedStatus = t.status.trim().toUpperCase();
+    const status = (t.status || "").toString().trim().toUpperCase();
 
-    if (normalizedStatus === 'VALID VIP INDICATOR' || normalizedStatus.includes('VIP INDICATOR')) {
+    const isMC = status === "MC" || status.includes("MARGIN CALL");
+    const isLowBal = status.includes("LOW") || status === "LOW BALANCE";
+    const isValidVIP = (status.includes("VALID VIP") || status === "VIP") && !status.includes("INDICATOR");
+    const isIndicate = status.includes("INDICATOR");
+    const isNotValid = status.includes("NOT VALID") || status === "INVALID" || status === "DELETED" || status.includes("NOT");
+    const isActive = status === "ACTIVE" || status === "VALID" || isValidVIP || isIndicate;
+
+    if (isIndicate) {
       statusCounts.validVipIndicator++;
-    } else if (normalizedStatus === 'VALID VIP' || normalizedStatus.includes('VIP')) {
+    } else if (isValidVIP) {
       statusCounts.validVip++;
-    } else if (normalizedStatus === 'ACTIVE' || normalizedStatus === 'VALID') {
+    } else if (isActive) {
       statusCounts.active++;
-    } else if (
-      normalizedStatus === 'LOW BAL' ||
-      normalizedStatus === 'LOW BALANCE' ||
-      normalizedStatus.includes('LOW')
-    ) {
+    } else if (isLowBal) {
       statusCounts.lowBal++;
-    } else if (normalizedStatus === 'MC' || normalizedStatus.includes('MARGIN CALL')) {
+    } else if (isMC) {
       statusCounts.mc++;
-    } else if (
-      normalizedStatus === 'NOT VALID' ||
-      normalizedStatus === 'INVALID' ||
-      normalizedStatus.includes('NOT')
-    ) {
+    } else if (isNotValid) {
       statusCounts.notValid++;
     } else {
       statusCounts.other++;

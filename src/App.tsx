@@ -17,7 +17,7 @@ import { DeleteConfirmModal } from './components/DeleteConfirmModal';
 import { AppsScriptModal } from './components/AppsScriptModal';
 import { AccessDenied403 } from './components/AccessDenied403';
 import { AuthModal } from './components/AuthModal';
-import { isEmailWhitelisted } from './utils/formatters';
+import { isEmailWhitelisted, calculateMetrics } from './utils/formatters';
 import { AlertTriangle, CheckCircle2, Info } from 'lucide-react';
 
 const SYNC_INTERVAL_SECONDS = 12; // 10-15s polling interval for real-time live sync
@@ -153,8 +153,27 @@ export default function App() {
         throw new Error(`Server returned HTTP ${res.status}`);
       }
       const json: TradersApiResponse = await res.json();
-      if (json && json.data) {
-        setDataResponse(json);
+      if (json && json.success) {
+        const malaysiaTraders = json.data?.malaysia || [];
+        const indonesiaTraders = json.data?.indonesia || [];
+        
+        // Always recalculate metrics on client-side to ensure accuracy with current logic
+        const malaysiaMetrics = calculateMetrics(malaysiaTraders, 'MY');
+        const indonesiaMetrics = calculateMetrics(indonesiaTraders, 'ID');
+        
+        const metrics = {
+          malaysia: malaysiaMetrics,
+          indonesia: indonesiaMetrics,
+          combined: {
+            totalTraders: malaysiaTraders.length + indonesiaTraders.length,
+            totalBalanceUSD: malaysiaMetrics.totalBalanceUSD + indonesiaMetrics.totalBalanceUSD
+          }
+        };
+
+        setDataResponse({
+          ...json,
+          metrics
+        });
         setSyncError(null);
       }
     } catch (err: any) {

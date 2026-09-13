@@ -39,10 +39,10 @@ function normalize(raw: any, country: 'MY' | 'ID', index: number) {
   const updatedBy = String(raw.updated_by || 'System Form');
   const level = Number(raw.level) || 1;
   const directPartnerEmail = String(raw.direct_partner_email || '-').trim();
-  const balance = typeof raw.balance === 'number' ? raw.balance : Number(raw.balance) || 0;
-  const equity = typeof raw.equity === 'number' ? raw.equity : Number(raw.equity) || 0;
-  const credit = typeof raw.credit === 'number' ? raw.credit : Number(raw.credit) || 0;
-  const margin = typeof raw.margin === 'number' ? raw.margin : Number(raw.margin) || 0;
+  const balance = typeof raw.balance === 'number' ? raw.balance : parseFloat(String(raw.balance || '0').replace(/[^0-9.-]+/g, "")) || 0;
+  const equity = typeof raw.equity === 'number' ? raw.equity : parseFloat(String(raw.equity || '0').replace(/[^0-9.-]+/g, "")) || 0;
+  const credit = typeof raw.credit === 'number' ? raw.credit : parseFloat(String(raw.credit || '0').replace(/[^0-9.-]+/g, "")) || 0;
+  const margin = typeof raw.margin === 'number' ? raw.margin : parseFloat(String(raw.margin || '0').replace(/[^0-9.-]+/g, "")) || 0;
   const leverage = Number(raw.leverage) || 100;
   const accountName = String(raw.account_name || '-');
   const accountType = String(raw.account_type || '-');
@@ -138,10 +138,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       .sort((a, b) => b.getTime() - a.getTime());
 
     const latestRegistrationDate = allDates.length > 0
-      ? allDates[0].toLocaleString('en-GB', { timeZone: 'Asia/Kuala_Lumpur' }) + ' (MYT)'
+      ? allDates[0].toLocaleString('en-GB', { timeZone: 'Asia/Kuala_Lumpur', day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) + ' (MYT)'
       : null;
 
-    const lastUpdateByEngine = new Date().toLocaleString('en-GB', { timeZone: 'Asia/Kuala_Lumpur' }) + ' (MYT)';
+    const lastUpdateByEngine = new Date().toLocaleString('en-GB', { timeZone: 'Asia/Kuala_Lumpur', day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) + ' (MYT)';
 
     return res.status(200).json({
       success: true,
