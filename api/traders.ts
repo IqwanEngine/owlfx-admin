@@ -4,9 +4,9 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 const MY_ENDPOINT = process.env.GOOGLE_SHEETS_MY_ENDPOINT || process.env.VITE_GOOGLE_SHEETS_MY_ENDPOINT || '';
 const ID_ENDPOINT = process.env.GOOGLE_SHEETS_ID_ENDPOINT || process.env.VITE_GOOGLE_SHEETS_ID_ENDPOINT || '';
 
-function getCleanUrl(endpoint: string) {
+function getCleanUrl(endpoint: string, action: string = 'fetch') {
   if (!endpoint) return '';
-  return endpoint.split('?')[0] + '?action=fetch';
+  return endpoint.split('?')[0] + `?action=${action}`;
 }
 
 async function fetchGAS(url: string) {
@@ -52,6 +52,13 @@ function normalize(raw: any, country: 'MY' | 'ID', index: number) {
   const currency = String(raw.currency || 'USD').toUpperCase();
   const status = String(raw.status || 'Active').trim();
 
+  // Column W normalization - STRIKT
+  let lastUpdateFormatted = '-';
+  const rawW = raw.updated_time || raw.last_update || raw.updated_time_col_w || raw.col_w;
+  if (rawW && String(rawW).trim() !== '' && String(rawW).trim() !== '-' && String(rawW).trim() !== 'undefined') {
+    lastUpdateFormatted = String(rawW).trim();
+  }
+
   let registerDateFormatted = '-';
   if (registerDate) {
     try {
@@ -70,8 +77,6 @@ function normalize(raw: any, country: 'MY' | 'ID', index: number) {
       }
     } catch {}
   }
-
-  let lastUpdateFormatted = registerDateFormatted;
 
   return {
     id: `${country}-${rowIdx}-${valetaxId || Math.random().toString(36).substring(2, 7)}`,
@@ -115,7 +120,58 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(200).end();
   }
 
+  // HANDLE POST: UPDATE COL W
+  if (req.method === 'POST') {
+    try {
+      const { action, region, row_index, valetax_id, timestamp } = req.body;
+      
+      if (action === 'update_col_w') {
+        const endpoint = region === 'ID' ? ID_ENDPOINT : MY_ENDPOINT;
+        const updateUrl = getCleanUrl(endpoint, 'update_col_w');
+
+        const gasRes = await fetch(updateUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            row_index,
+            valetax_id,
+            timestamp
+          })
+        });
+
+        const gasData = await gasRes.json();
+        return res.status(200).json({ success: true, data: gasData });
+      }
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: err.message });
+    }
+  }
+
+  // HANDLE GET: FETCH DATA
   try {
+    const region = req.query.region as string; // 'MY' or 'ID' or undefined
+
+    if (region === 'MY') {
+      const rawMY = await fetchGAS(MY_ENDPOINT);
+      const myTraders = rawMY.map((r, i) => normalize(r, 'MY', i)).sort((a, b) => {
+        const timeA = a.registerDate ? new Date(a.registerDate).getTime() : 0;
+        const timeB = b.registerDate ? new Date(b.registerDate).getTime() : 0;
+        return (timeB || 0) - (timeA || 0);
+      });
+      return res.status(200).json({ success: true, data: { malaysia: myTraders } });
+    }
+
+    if (region === 'ID') {
+      const rawID = await fetchGAS(ID_ENDPOINT);
+      const idTraders = rawID.map((r, i) => normalize(r, 'ID', i)).sort((a, b) => {
+        const timeA = a.registerDate ? new Date(a.registerDate).getTime() : 0;
+        const timeB = b.registerDate ? new Date(b.registerDate).getTime() : 0;
+        return (timeB || 0) - (timeA || 0);
+      });
+      return res.status(200).json({ success: true, data: { indonesia: idTraders } });
+    }
+
+    // Default: Fetch Both (legacy support)
     const [rawMY, rawID] = await Promise.all([
       fetchGAS(MY_ENDPOINT),
       fetchGAS(ID_ENDPOINT)
@@ -130,24 +186,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const myTraders = rawMY.map((r, i) => normalize(r, 'MY', i)).sort(sortFn);
     const idTraders = rawID.map((r, i) => normalize(r, 'ID', i)).sort(sortFn);
 
-    const allDates = [...myTraders, ...idTraders]
-      .map(t => t.registerDate)
-      .filter(Boolean)
-      .map(d => new Date(d))
-      .filter(d => !isNaN(d.getTime()))
-      .sort((a, b) => b.getTime() - a.getTime());
-
-    const latestRegistrationDate = allDates.length > 0
-      ? allDates[0].toLocaleString('en-GB', { timeZone: 'Asia/Kuala_Lumpur', day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) + ' (MYT)'
-      : null;
-
-    const lastUpdateByEngine = new Date().toLocaleString('en-GB', { timeZone: 'Asia/Kuala_Lumpur', day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) + ' (MYT)';
-
     return res.status(200).json({
       success: true,
       timestamp: new Date().toISOString(),
-      latestRegistrationDate,
-      lastUpdateByEngine,
       data: {
         malaysia: myTraders,
         indonesia: idTraders

@@ -95,7 +95,7 @@ export function sanitizeBalance(val: any): number {
   if (str === '' || str === '-' || /n\/?a/i.test(str)) return 0;
 
   // Remove thousand commas and any non-numeric characters except minus and period
-  const cleaned = str.replace(/,/g, '').replace(/[^0-9.-]/g, '');
+  const cleaned = str.replace(/,/g, '').replace(/[^0-9.-]+/g, '');
   const num = parseFloat(cleaned);
   return isNaN(num) ? 0 : num;
 }
@@ -115,16 +115,23 @@ export function normalizeTrader(raw: RawTrader, country: 'MY' | 'ID', index: num
   const accountType = String(raw.account_type || '-');
   const currency = String(raw.currency || 'USD').toUpperCase();
 
-  const balance = sanitizeBalance(raw.balance, accountType, currency);
-  const equity = sanitizeBalance(raw.equity, accountType, currency);
-  const credit = sanitizeBalance(raw.credit, accountType, currency);
-  const margin = sanitizeBalance(raw.margin, accountType, currency);
+  const balance = sanitizeBalance(raw.balance);
+  const equity = sanitizeBalance(raw.equity);
+  const credit = sanitizeBalance(raw.credit);
+  const margin = sanitizeBalance(raw.margin);
   const leverage = Number(String(raw.leverage ?? 100).replace(/[^0-9.]/g, '')) || 100;
   const accountName = String(raw.account_name || '-');
   const server = String(raw.server || '-');
   const platform = String(raw.platform || 'meta4');
   const dateOfCreation = raw.date_of_creation ? String(raw.date_of_creation) : '';
   const status = String(raw.status || 'Active').trim();
+
+  // STRICT COLUMN W NORMALIZATION - NO FALLBACKS
+  let lastUpdateFormatted = '-';
+  const rawW = raw.updated_time || raw.last_update || raw.updated_time_col_w || raw.review_time || raw.last_updated || raw.col_w;
+  if (rawW && String(rawW).trim() !== '' && String(rawW).trim() !== '-' && String(rawW).trim() !== 'undefined' && String(rawW).trim() !== 'null') {
+    lastUpdateFormatted = String(rawW).trim();
+  }
 
   // Format register date
   let registerDateFormatted = '-';
@@ -142,34 +149,9 @@ export function normalizeTrader(raw: RawTrader, country: 'MY' | 'ID', index: num
           hour12: false,
           timeZone: 'Asia/Kuala_Lumpur'
         });
-      } else {
-        registerDateFormatted = registerDate;
       }
     } catch {
       registerDateFormatted = registerDate;
-    }
-  }
-
-  // Format last update strictly from Column W (Column 23 - "Updated TIME")
-  let lastUpdateFormatted = '-';
-  const rawUpdatedTime = raw.updated_time ?? raw.last_update ?? raw.updated_time_col_w ?? raw.review_time ?? raw.last_updated ?? raw.col_w;
-  if (rawUpdatedTime && String(rawUpdatedTime).trim() !== '' && String(rawUpdatedTime).trim() !== '-' && String(rawUpdatedTime).trim() !== 'undefined' && String(rawUpdatedTime).trim() !== 'null') {
-    const timeStr = String(rawUpdatedTime).trim();
-    try {
-      const d = new Date(timeStr);
-      if (!isNaN(d.getTime())) {
-        const y = d.getFullYear();
-        const m = String(d.getMonth() + 1).padStart(2, '0');
-        const day = String(d.getDate()).padStart(2, '0');
-        const hh = String(d.getHours()).padStart(2, '0');
-        const mm = String(d.getMinutes()).padStart(2, '0');
-        const ss = String(d.getSeconds()).padStart(2, '0');
-        lastUpdateFormatted = `${y}-${m}-${day} ${hh}:${mm}:${ss}`;
-      } else {
-        lastUpdateFormatted = timeStr;
-      }
-    } catch {
-      lastUpdateFormatted = timeStr;
     }
   }
 
@@ -278,7 +260,7 @@ export function calculateMetrics(traders: TraderRecord[], country: 'MY' | 'ID'):
 export function formatCurrency(amount: number, currency: string = 'USD'): string {
   return new Intl.NumberFormat('en-US', {
     style: 'currency',
-    currency: currency === 'USD' ? 'USD' : 'USD',
+    currency: 'USD',
     minimumFractionDigits: 2,
     maximumFractionDigits: 2
   }).format(amount);
@@ -300,8 +282,6 @@ export function formatLiveTimestamp(date: Date = new Date()): string {
 export function isEmailWhitelisted(email: string, allowedEmailsEnv?: string): boolean {
   if (!email) return false;
   const target = email.trim().toLowerCase();
-  // In production, the whitelist should be checked against the backend.
-  // This client-side check is only for UI feedback and should use the list provided by the server.
   const rawList = allowedEmailsEnv || '';
   if (!rawList) return false;
   
