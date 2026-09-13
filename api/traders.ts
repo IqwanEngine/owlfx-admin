@@ -3,10 +3,11 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 
 const MY_ENDPOINT = process.env.GOOGLE_SHEETS_MY_ENDPOINT || process.env.VITE_GOOGLE_SHEETS_MY_ENDPOINT || '';
 const ID_ENDPOINT = process.env.GOOGLE_SHEETS_ID_ENDPOINT || process.env.VITE_GOOGLE_SHEETS_ID_ENDPOINT || '';
+const ADMIN_KEY = process.env.ADMIN_DASHBOARD_KEY || 'IE_Admin#Gold2026!Master';
 
 function getCleanUrl(endpoint: string, action: string = 'fetch') {
   if (!endpoint) return '';
-  return endpoint.split('?')[0] + `?action=${action}`;
+  return endpoint.split('?')[0] + `?action=${action}&key=${encodeURIComponent(ADMIN_KEY)}`;
 }
 
 async function fetchGAS(url: string) {
@@ -18,12 +19,22 @@ async function fetchGAS(url: string) {
       cache: 'no-store',
       headers: { 'Accept': 'application/json' }
     });
-    if (!res.ok) return [];
+    
+    if (!res.ok) {
+      throw new Error(`GAS fetch failed with status: ${res.status}`);
+    }
+
     const json = await res.json();
+
+    // Catch success: false from GAS
+    if (json && json.success === false) {
+      throw new Error(json.message || 'GAS reported failure');
+    }
+
     return Array.isArray(json.data) ? json.data : Array.isArray(json) ? json : [];
   } catch (err) {
     console.error('GAS Fetch error:', err);
-    return [];
+    throw err; // Don't return empty array silently
   }
 }
 
