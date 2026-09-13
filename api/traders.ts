@@ -1,10 +1,8 @@
 /* Powered by IqwanEngine */
+import type { VercelRequest, VercelResponse } from '@vercel/node';
 
-export const dynamic = 'force-dynamic';
-export const revalidate = 0;
-
-const MY_ENDPOINT = process.env.GOOGLE_SHEETS_MY_ENDPOINT || '';
-const ID_ENDPOINT = process.env.GOOGLE_SHEETS_ID_ENDPOINT || '';
+const MY_ENDPOINT = process.env.GOOGLE_SHEETS_MY_ENDPOINT || process.env.VITE_GOOGLE_SHEETS_MY_ENDPOINT || '';
+const ID_ENDPOINT = process.env.GOOGLE_SHEETS_ID_ENDPOINT || process.env.VITE_GOOGLE_SHEETS_ID_ENDPOINT || '';
 
 function getCleanUrl(endpoint: string) {
   if (!endpoint) return '';
@@ -107,7 +105,16 @@ function normalize(raw: any, country: 'MY' | 'ID', index: number) {
   };
 }
 
-export async function GET() {
+export default async function handler(req: VercelRequest, res: VercelResponse) {
+  // Enable CORS
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+
+  if (req.method === 'OPTIONS') {
+    return res.status(200).end();
+  }
+
   try {
     const [rawMY, rawID] = await Promise.all([
       fetchGAS(MY_ENDPOINT),
@@ -136,7 +143,7 @@ export async function GET() {
 
     const lastUpdateByEngine = new Date().toLocaleString('en-GB', { timeZone: 'Asia/Kuala_Lumpur' }) + ' (MYT)';
 
-    return Response.json({
+    return res.status(200).json({
       success: true,
       timestamp: new Date().toISOString(),
       latestRegistrationDate,
@@ -147,6 +154,6 @@ export async function GET() {
       }
     });
   } catch (error: any) {
-    return Response.json({ success: false, error: error.message }, { status: 500 });
+    return res.status(500).json({ success: false, error: error.message });
   }
 }
