@@ -17,6 +17,7 @@ interface TradersTableProps {
   traders: TraderRecord[];
   countryCode: 'MY' | 'ID';
   isInitialLoading: boolean;
+  isSyncing?: boolean;
   totalUnfilteredCount: number;
   verifyingId: string | null;
   onVerifyTrader: (trader: TraderRecord) => void;
@@ -37,6 +38,7 @@ export const TradersTable: React.FC<TradersTableProps> = ({
   traders = [],
   countryCode,
   isInitialLoading,
+  isSyncing = false,
   totalUnfilteredCount = 0,
   verifyingId,
   onVerifyTrader,
@@ -97,7 +99,7 @@ export const TradersTable: React.FC<TradersTableProps> = ({
       {/* Table Header Section */}
       <div className="p-4 border-b border-[#3E2D17] flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-gradient-to-r from-[#1A1208]/40 to-transparent">
         <div className="flex items-center gap-3">
-          <div className={`w-2 h-2 rounded-full ${isInitialLoading ? 'bg-amber-500 animate-pulse' : 'bg-emerald-500'}`} />
+          <div className={`w-2 h-2 rounded-full ${isInitialLoading ? 'bg-amber-500 animate-pulse' : isSyncing ? 'bg-blue-400 animate-pulse' : 'bg-emerald-500'}`} />
           <h3 className="text-[10px] font-bold tracking-[0.2em] text-[#D4A017] uppercase">
             {regionHeading}
           </h3>

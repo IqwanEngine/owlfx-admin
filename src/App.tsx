@@ -19,7 +19,7 @@ import { AuthModal } from './components/AuthModal';
 import { calculateMetrics, formatLiveTimestamp } from './utils/formatters';
 import { AlertTriangle, CheckCircle2 } from 'lucide-react';
 
-const SYNC_INTERVAL_SECONDS = 15;
+const SYNC_INTERVAL_SECONDS = 60;
 
 export default function App() {
   // 1. Authentication State
@@ -111,8 +111,11 @@ export default function App() {
   const [indonesiaMetrics, setIndonesiaMetrics] = useState<CountryMetrics | null>(null);
   const [latestRegistrationDate, setLatestRegistrationDate] = useState<string | null>(null);
   
-  const [loadingMY, setLoadingMY] = useState<boolean>(true);
-  const [loadingID, setLoadingID] = useState<boolean>(true);
+  // Separation of Loading States to prevent flickering
+  const [isInitialLoadingMY, setIsInitialLoadingMY] = useState<boolean>(true);
+  const [isInitialLoadingID, setIsInitialLoadingID] = useState<boolean>(true);
+  const [isSyncingMY, setIsSyncingMY] = useState<boolean>(false);
+  const [isSyncingID, setIsSyncingID] = useState<boolean>(false);
   
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
   const [syncError, setSyncError] = useState<string | null>(null);
@@ -156,8 +159,8 @@ export default function App() {
     setSyncError(null);
 
     const fetchRegion = async (region: 'MY' | 'ID') => {
-      if (region === 'MY') setLoadingMY(true);
-      else setLoadingID(true);
+      if (region === 'MY') setIsSyncingMY(true);
+      else setIsSyncingID(true);
 
       try {
         const url = `/api/traders?region=${region}${isManualRefresh ? '&fresh=true' : ''}`;
@@ -172,19 +175,22 @@ export default function App() {
           if (region === 'MY') {
             setMalaysiaData(Array.isArray(traders) ? traders : []);
             setMalaysiaMetrics(metrics);
+            setIsInitialLoadingMY(false);
           } else {
             setIndonesiaData(Array.isArray(traders) ? traders : []);
             setIndonesiaMetrics(metrics);
+            setIsInitialLoadingID(false);
           }
         }
       } catch (err: any) {
         setSyncError(`Upstream ${region} fetch issue: ${err.message}`);
       } finally {
-        if (region === 'MY') setLoadingMY(false);
-        else setLoadingID(false);
+        if (region === 'MY') setIsSyncingMY(false);
+        else setIsSyncingID(false);
       }
     };
 
+    // Execute independently
     fetchRegion('MY');
     fetchRegion('ID');
 
@@ -358,6 +364,8 @@ export default function App() {
     setIndonesiaData([]);
     setMalaysiaMetrics(null);
     setIndonesiaMetrics(null);
+    setIsInitialLoadingMY(true);
+    setIsInitialLoadingID(true);
   };
 
   const handleQuickAuthorize = (email: string) => {
@@ -529,8 +537,8 @@ export default function App() {
         />
 
         <div className="space-y-8">
-          <TradersTable traders={filteredMalaysia} countryCode="MY" isInitialLoading={loadingMY} totalUnfilteredCount={malaysiaData.length} verifyingId={verifyingId} onVerifyTrader={handleVerifyTrader} onSelectTrader={setSelectedTrader} onPromptDeleteTrader={handlePromptDeleteTrader} filterState={myFilters} onFilterChange={setMyFilters} onResetFilters={() => setMyFilters({ ...initialFilterState })} availableAccountTypes={availableAccountTypes} availablePartnerEmails={availableMyPartnerEmails} />
-          <TradersTable traders={filteredIndonesia} countryCode="ID" isInitialLoading={loadingID} totalUnfilteredCount={indonesiaData.length} verifyingId={verifyingId} onVerifyTrader={handleVerifyTrader} onSelectTrader={setSelectedTrader} onPromptDeleteTrader={handlePromptDeleteTrader} filterState={idFilters} onFilterChange={setIdFilters} onResetFilters={() => setIdFilters({ ...initialFilterState })} availableAccountTypes={availableAccountTypes} availablePartnerEmails={availableIdPartnerEmails} />
+          <TradersTable traders={filteredMalaysia} countryCode="MY" isInitialLoading={isInitialLoadingMY} isSyncing={isSyncingMY} totalUnfilteredCount={malaysiaData.length} verifyingId={verifyingId} onVerifyTrader={handleVerifyTrader} onSelectTrader={setSelectedTrader} onPromptDeleteTrader={handlePromptDeleteTrader} filterState={myFilters} onFilterChange={setMyFilters} onResetFilters={() => setMyFilters({ ...initialFilterState })} availableAccountTypes={availableAccountTypes} availablePartnerEmails={availableMyPartnerEmails} />
+          <TradersTable traders={filteredIndonesia} countryCode="ID" isInitialLoading={isInitialLoadingID} isSyncing={isSyncingID} totalUnfilteredCount={indonesiaData.length} verifyingId={verifyingId} onVerifyTrader={handleVerifyTrader} onSelectTrader={setSelectedTrader} onPromptDeleteTrader={handlePromptDeleteTrader} filterState={idFilters} onFilterChange={setIdFilters} onResetFilters={() => setIdFilters({ ...initialFilterState })} availableAccountTypes={availableAccountTypes} availablePartnerEmails={availableIdPartnerEmails} />
         </div>
       </main>
       <footer className="px-6 py-3 border-t border-[#3E2D17] bg-[#0A0A0F] flex flex-col sm:flex-row justify-between items-center text-[9px] font-mono tracking-widest text-[#D4A017]/60 uppercase gap-2 relative z-10">
