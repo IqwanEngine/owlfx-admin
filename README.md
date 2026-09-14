@@ -1,20 +1,26 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://ai.google.dev/static/site-assets/images/share-ais-513315318.png" />
-</div>
+# 🦉 OWLFX Executive Admin Hub (`admin.owlfx.my`)
 
-# Run and deploy your AI Studio app
+[![Platform](https://img.shields.io/badge/Architecture-Headless%20Fintech%20Control%20Hub-blue?style=for-the-badge)](https://admin.owlfx.my)
+[![Security Standard](https://img.shields.io/badge/Security-Zero--Trust%20Multi--Layer-emerald?style=for-the-badge)](#-senibina-keselamatan)
+[![Engine](https://img.shields.io/badge/Engine-IqwanEngine-amber?style=for-the-badge)](#-kredit--hak-cipta)
 
-This contains everything you need to run your app locally.
+> **Portal Operasi & Pengurusan Pangkalan Data Berpusat OWLFX.**  
+> Dibangunkan khusus untuk kawalan operasi, analitik pedagang dwi-wilayah (Malaysia & Indonesia), pengesahan status kelayakan akaun Valetax, dan penyelenggaraan modul ekosistem secara berpusat.
 
-View your app in AI Studio: https://ai.studio/apps/63f1ba41-2176-4a41-adcd-6b540c3a06e9
+---
 
-## Run Locally
+## 🏛️ Gambaran Keseluruhan Sistem
 
-**Prerequisites:**  Node.js
+`admin.owlfx.my` beroperasi sebagai pusat kawalan tertutup yang diasingkan sepenuhnya daripada portal awam (`owlfx.my`). Menggunakan pendekatan **Headless Operating Architecture**, panel ini membolehkan pihak pengurusan memantau volum dagangan, integrasi rebat, serta pendaftaran ahli tanpa mendedahkan pangkalan data teras kepada domain awam.
 
+### Ciri-Ciri Utama:
+- **Pengurusan Data Dwi-Wilayah:** Penapisan automatik bagi pendaftaran rantau Malaysia (MY) dan Indonesia (ID).
+- **Pemantauan Status Kuantitatif:** Pengesanan status akaun secara automatik (*Active*, *Low Balance*, *Margin Call*, *VIP Verified*).
+- **Pengasingan Subdomain Mutlak:** Perlindungan sesi dan kuki terpencil bagi mengelakkan kebocoran laluan dari domain umum.
+- **Penyelarasan Data Masa Nyata:** Komunikasi data berpusat menggunakan lapisan perkhidmatan proksi pelayan (*Serverless Bridge*).
 
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+---
+
+## 🔒 Senibina Keselamatan
+
+Platform ini mengadaptasi piawaian **Zero-Trust Security** untuk memastikan integriti data pedagang sentiasa terpelihara:
