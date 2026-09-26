@@ -131,28 +131,38 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(200).end();
   }
 
-  // HANDLE POST: UPDATE COL W
   if (req.method === 'POST') {
     try {
-      const { action, region, row_index, valetax_id, timestamp } = req.body;
+      // Ambil kesemua parameter yang mungkin dihantar oleh frontend
+      const { action, region, row_index, rowIndex, valetax_id, timestamp, updateData } = req.body;
       
-      if (action === 'update_col_w') {
-        const endpoint = region === 'ID' ? ID_ENDPOINT : MY_ENDPOINT;
-        const updateUrl = getCleanUrl(endpoint, 'update_col_w');
-
-        const gasRes = await fetch(updateUrl, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            row_index,
-            valetax_id,
-            timestamp
-          })
-        });
-
-        const gasData = await gasRes.json();
-        return res.status(200).json({ success: true, data: gasData });
+      if (!action) {
+        return res.status(400).json({ success: false, error: "Tindakan (action) tidak disediakan." });
       }
+
+      // Tentukan endpoint berdasarkan wilayah
+      const endpoint = region === 'ID' ? ID_ENDPOINT : MY_ENDPOINT;
+      
+      // Bina URL dengan menyertakan Kunci Keselamatan dan action
+      const postUrl = getCleanUrl(endpoint, action);
+
+      // Hantar arahan ke Google Apps Script
+      const gasRes = await fetch(postUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: action,
+          row_index: row_index || rowIndex, // Sokong kedua-dua format
+          rowIndex: row_index || rowIndex,
+          valetax_id: valetax_id,
+          timestamp: timestamp,
+          updateData: updateData
+        })
+      });
+
+      const gasData = await gasRes.json();
+      return res.status(200).json({ success: true, data: gasData });
+
     } catch (err: any) {
       return res.status(500).json({ success: false, error: err.message });
     }

@@ -38,7 +38,7 @@ export const MetricsCard: React.FC<MetricsCardProps> = ({
     const isThisCountryActive = activeCountryFilter === countryCode;
 
     return (
-      <div 
+      <div
         className={`bg-[#0A0A0F]/90 border ${
           isThisCountryActive ? 'border-[#D4A017] ring-1 ring-[#D4A017]' : 'border-[#D4A017]/20 hover:border-[#D4A017]/40'
         } rounded-md p-3.5 sm:p-4 flex flex-col sm:flex-row justify-between items-start sm:items-center backdrop-blur-md relative overflow-hidden group shadow-lg transition-all gap-3`}
@@ -66,7 +66,7 @@ export const MetricsCard: React.FC<MetricsCardProps> = ({
             )}
           </div>
 
-          <div 
+          <div
             onClick={() => onFilterStatus(null, countryCode)}
             className="cursor-pointer group/traders inline-block"
             title="Filter by this region"
@@ -86,7 +86,7 @@ export const MetricsCard: React.FC<MetricsCardProps> = ({
 
         {/* Right Side: 3-Column Micro Status Grid */}
         <div className="grid grid-cols-3 gap-x-3 sm:gap-x-4 gap-y-1.5 text-[9px] uppercase font-semibold text-right relative z-10 w-full sm:w-auto pt-2 sm:pt-0 border-t sm:border-t-0 border-[#241B10]">
-          
+
           {/* Active */}
           <button
             onClick={() => onFilterStatus('ACTIVE', countryCode)}
@@ -135,10 +135,10 @@ export const MetricsCard: React.FC<MetricsCardProps> = ({
           <button
             onClick={() => onFilterStatus('NOT VALID', countryCode)}
             className={`flex flex-col text-right hover:opacity-80 transition-opacity p-1 rounded-sm ${
-              activeStatusFilter === 'NOT VALID' && isThisCountryActive ? 'bg-slate-500/10 ring-1 ring-slate-500/40' : ''
+              activeStatusFilter === 'NOT VALID' && isThisCountryActive ? 'bg-red-500 ring-1 ring-red-500/40' : ''
             }`}
           >
-            <span className="text-slate-400">Not Valid</span>
+            <span className="text-white">Not Valid</span>
             <span className="font-mono text-white text-xs font-bold">{b.notValid.toLocaleString()}</span>
           </button>
 
