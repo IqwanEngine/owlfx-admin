@@ -1,9 +1,9 @@
 /* Powered by IqwanEngine */
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { 
-  TraderRecord, 
-  CountryMetrics, 
+import {
+  TraderRecord,
+  CountryMetrics,
   AuthUser,
   MultiColumnFilterState
 } from './types';
@@ -27,14 +27,14 @@ export default function App() {
     try {
       const saved = localStorage.getItem('owlalgo_user_email');
       const isConsensusAuth = localStorage.getItem('owlfx_auth_session') === 'authenticated';
-      
+
       if (!saved && !isConsensusAuth) return null;
-      
+
       const email = saved || 'admin_session@owlfx.my';
       return {
         email: email,
         name: (email.split('@')[0] || 'ADMIN').toUpperCase(),
-        isAuthorized: isConsensusAuth, 
+        isAuthorized: isConsensusAuth,
         role: isConsensusAuth ? 'Administrator' : 'Guest'
       };
     } catch (e) {
@@ -52,7 +52,7 @@ export default function App() {
       });
       if (!res.ok) throw new Error('Auth fetch failed');
       const data = await res.json();
-      
+
       const isConsensusAuth = localStorage.getItem('owlfx_auth_session') === 'authenticated';
 
       if (data && data.success) {
@@ -110,13 +110,13 @@ export default function App() {
   const [malaysiaMetrics, setMalaysiaMetrics] = useState<CountryMetrics | null>(null);
   const [indonesiaMetrics, setIndonesiaMetrics] = useState<CountryMetrics | null>(null);
   const [latestRegistrationDate, setLatestRegistrationDate] = useState<string | null>(null);
-  
+
   // Separation of Loading States to prevent flickering
   const [isInitialLoadingMY, setIsInitialLoadingMY] = useState<boolean>(true);
   const [isInitialLoadingID, setIsInitialLoadingID] = useState<boolean>(true);
   const [isSyncingMY, setIsSyncingMY] = useState<boolean>(false);
   const [isSyncingID, setIsSyncingID] = useState<boolean>(false);
-  
+
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
   const [syncError, setSyncError] = useState<string | null>(null);
   const [nextSyncSeconds, setNextSyncSeconds] = useState<number>(SYNC_INTERVAL_SECONDS);
@@ -166,7 +166,7 @@ export default function App() {
         const url = `/api/traders?region=${region}${isManualRefresh ? '&fresh=true' : ''}`;
         const res = await fetch(url);
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        
+
         const json = await res.json();
         if (json && json.success) {
           const traders = region === 'MY' ? (json.data?.malaysia || []) : (json.data?.indonesia || []);
@@ -208,13 +208,13 @@ export default function App() {
       .sort((a, b) => b.getTime() - a.getTime());
 
     if (allDates.length > 0) {
-      setLatestRegistrationDate(allDates[0].toLocaleString('en-GB', { 
-        timeZone: 'Asia/Kuala_Lumpur', 
-        day: '2-digit', 
-        month: 'short', 
-        year: 'numeric', 
-        hour: '2-digit', 
-        minute: '2-digit' 
+      setLatestRegistrationDate(allDates[0].toLocaleString('en-GB', {
+        timeZone: 'Asia/Kuala_Lumpur',
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
       }) + ' (MYT)');
     }
   }, [malaysiaData, indonesiaData]);
@@ -272,7 +272,7 @@ export default function App() {
       });
 
       if (!res.ok) throw new Error('Server update failed');
-      showToast(`✓ Sync Success: Row #${trader.rowIndex} Column W updated to ${currentTimestamp}`);
+      showToast(`✓ Success: Trader #${trader.rowIndex} updated at ${currentTimestamp}`);
     } catch (err: any) {
       showToast(`Notice: Local review updated.`);
     } finally {
@@ -327,7 +327,7 @@ export default function App() {
       });
       const data = await res.json();
       const isConsensusAuth = localStorage.getItem('owlfx_auth_session') === 'authenticated';
-      
+
       if ((data && data.success) || isConsensusAuth) {
         localStorage.setItem('owlalgo_user_email', email);
         const authUser: AuthUser = (data && data.success) ? data.user : {
@@ -430,7 +430,7 @@ export default function App() {
     if (maxVal !== null && !isNaN(maxVal) && (t.balance || 0) > maxVal) return false;
     if (filterState.accountType && (t.accountType || '').toLowerCase() !== filterState.accountType.toLowerCase()) return false;
     if (filterState.partnerEmail && !(t.directPartnerEmail || '').toLowerCase().includes(filterState.partnerEmail.toLowerCase().trim())) return false;
-    
+
     if (filterState.status) {
       const s = (t.status || '').toUpperCase().trim();
       const f = filterState.status.toUpperCase().trim();
@@ -451,7 +451,13 @@ export default function App() {
       const matchContact = (t.contactNumber || '').toLowerCase().includes(q);
       const matchEmail = (t.registerEmail || '').toLowerCase().includes(q);
       const matchValetax = (t.valetaxId || '').toLowerCase().includes(q);
-      if (!matchName && !matchContact && !matchEmail && !matchValetax) return false;
+
+      // Semakan untuk TradingView ID (menyokong format langsung dan fallback raw)
+      const matchTradingView = (t.tradingViewUsername || t.tradingViewId || t.raw?.trading_view_username || '').toLowerCase().includes(q);
+
+      if (!matchName && !matchContact && !matchEmail && !matchValetax && !matchTradingView) {
+        return false;
+      }
     }
     if (statusFilter) {
       const s = (t.status || '').toUpperCase().trim();
@@ -522,17 +528,17 @@ export default function App() {
           </div>
         )}
         <MetricsCard malaysiaMetrics={malaysiaMetrics} indonesiaMetrics={indonesiaMetrics} activeStatusFilter={statusFilter} activeCountryFilter={countryFilter} onFilterStatus={handleFilterStatus} />
-        
-        <SearchFilter 
-          searchTerm={searchTerm} 
-          onSearchChange={setSearchTerm} 
-          statusFilter={statusFilter} 
-          onStatusFilterChange={setStatusFilter} 
+
+        <SearchFilter
+          searchTerm={searchTerm}
+          onSearchChange={setSearchTerm}
+          statusFilter={statusFilter}
+          onStatusFilterChange={setStatusFilter}
           accountTypeFilter={accountTypeFilter}
           onAccountTypeFilterChange={setAccountTypeFilter}
           availableAccountTypes={availableAccountTypes}
-          totalFilteredCount={totalFiltered} 
-          totalUnfilteredCount={totalUnfiltered} 
+          totalFilteredCount={totalFiltered}
+          totalUnfilteredCount={totalUnfiltered}
           onResetAll={handleResetAllFilters}
         />
 

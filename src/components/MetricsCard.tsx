@@ -138,7 +138,7 @@ export const MetricsCard: React.FC<MetricsCardProps> = ({
               activeStatusFilter === 'NOT VALID' && isThisCountryActive ? 'bg-red-500 ring-1 ring-red-500/40' : ''
             }`}
           >
-            <span className="text-white">Not Valid</span>
+            <span className="text-red-500">Not Valid</span>
             <span className="font-mono text-white text-xs font-bold">{b.notValid.toLocaleString()}</span>
           </button>
 
@@ -149,7 +149,7 @@ export const MetricsCard: React.FC<MetricsCardProps> = ({
               activeStatusFilter === 'VALID VIP INDICATOR' && isThisCountryActive ? 'bg-[#D4A017]/10 ring-1 ring-[#D4A017]/40' : ''
             }`}
           >
-            <span className="text-[#D4A017]">Indicate</span>
+            <span className="text-[#D4A017]">VVIP</span>
             <span className="font-mono text-white text-xs font-bold">{b.validVipIndicator.toLocaleString()}</span>
           </button>
 

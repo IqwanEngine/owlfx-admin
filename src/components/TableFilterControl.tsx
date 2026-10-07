@@ -1,18 +1,18 @@
 /* Powered by IqwanEngine */
 
 import React, { useState, useMemo } from 'react';
-import { 
-  Filter, 
-  RotateCcw, 
-  Calendar, 
-  DollarSign, 
-  UserCheck, 
-  Mail, 
-  Layers, 
-  ChevronDown, 
-  ChevronUp, 
-  Search, 
-  Check, 
+import {
+  Filter,
+  RotateCcw,
+  Calendar,
+  DollarSign,
+  UserCheck,
+  Mail,
+  Layers,
+  ChevronDown,
+  ChevronUp,
+  Search,
+  Check,
   X,
   SlidersHorizontal
 } from 'lucide-react';
@@ -178,24 +178,24 @@ export const TableFilterControl: React.FC<TableFilterControlProps> = ({
   // Filtered list of partner emails for searchable dropdown
   const filteredPartnerEmails = useMemo(() => {
     if (!partnerSearchTerm.trim()) return availablePartnerEmails;
-    return availablePartnerEmails.filter(email => 
+    return availablePartnerEmails.filter(email =>
       email.toLowerCase().includes(partnerSearchTerm.toLowerCase().trim())
     );
   }, [availablePartnerEmails, partnerSearchTerm]);
 
   return (
     <div className="bg-[#0D0B09] border-b border-[#3E2D17] font-mono text-[10px]">
-      
+
       {/* 1. Header Bar for Collapsible Filter Control */}
       <div className="px-4 py-2 flex flex-wrap items-center justify-between gap-2 bg-[#120F0C]">
-        
+
         {/* Left: Filter Toggle Button & Active Status */}
         <div className="flex items-center gap-2">
           <button
             onClick={() => setIsExpanded(!isExpanded)}
             className={`px-2.5 py-1 rounded-xs flex items-center gap-1.5 font-bold uppercase transition-all cursor-pointer border ${
-              isFilterActive 
-                ? 'bg-[#D4A017] text-black border-[#D4A017]' 
+              isFilterActive
+                ? 'bg-[#D4A017] text-black border-[#D4A017]'
                 : 'bg-[#18130B] text-[#D4A017] border-[#3E2D17] hover:border-[#D4A017]/60'
             }`}
           >
@@ -246,7 +246,7 @@ export const TableFilterControl: React.FC<TableFilterControlProps> = ({
         {/* Right: Record count & Reset Filter Button */}
         <div className="flex items-center gap-2">
           <div className="text-[9px] text-[#71717A]">
-            FILTERED: <span className="text-[#D4A017] font-bold">{totalFilteredCount}</span> / {totalUnfilteredCount}
+            TOTAL: <span className="text-[#D4A017] font-bold">{totalFilteredCount}</span> / {totalUnfilteredCount}
           </div>
 
           {isFilterActive && (
@@ -266,7 +266,7 @@ export const TableFilterControl: React.FC<TableFilterControlProps> = ({
       {/* 2. Collapsible Filter Control Form Panel */}
       {isExpanded && (
         <div className="p-3.5 bg-[#080706] border-t border-[#3E2D17]/60 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 animate-in fade-in duration-150">
-          
+
           {/* COLUMN 1: Register Date Filter */}
           <div className="bg-[#0E0C09] border border-[#3E2D17] rounded-xs p-2.5 flex flex-col gap-2">
             <div className="flex items-center justify-between text-[#D4A017] font-bold uppercase tracking-wider text-[9px] border-b border-[#3E2D17]/50 pb-1">
@@ -275,7 +275,7 @@ export const TableFilterControl: React.FC<TableFilterControlProps> = ({
                 <span>Register Date</span>
               </div>
               {filterState.datePreset !== 'all' && (
-                <button 
+                <button
                   onClick={() => handleDatePresetChange('all')}
                   className="text-zinc-500 hover:text-white"
                   title="Clear Date Filter"
@@ -342,7 +342,7 @@ export const TableFilterControl: React.FC<TableFilterControlProps> = ({
                 <span>Balance (USD)</span>
               </div>
               {filterState.balancePreset !== 'all' && (
-                <button 
+                <button
                   onClick={() => handleBalancePresetChange('all')}
                   className="text-zinc-500 hover:text-white"
                   title="Clear Balance Filter"
@@ -413,7 +413,7 @@ export const TableFilterControl: React.FC<TableFilterControlProps> = ({
                 <span>Account Type</span>
               </div>
               {filterState.accountType && (
-                <button 
+                <button
                   onClick={() => onFilterChange({ ...filterState, accountType: '' })}
                   className="text-zinc-500 hover:text-white"
                   title="Clear Account Type"
@@ -447,7 +447,7 @@ export const TableFilterControl: React.FC<TableFilterControlProps> = ({
                 <span>Partner / IB Email</span>
               </div>
               {filterState.partnerEmail && (
-                <button 
+                <button
                   onClick={() => {
                     onFilterChange({ ...filterState, partnerEmail: '' });
                     setPartnerSearchTerm('');
@@ -493,11 +493,11 @@ export const TableFilterControl: React.FC<TableFilterControlProps> = ({
 
             {/* Quick dropdown pills or suggestions */}
             {isPartnerDropdownOpen && filteredPartnerEmails.length > 0 && (
-              <div 
+              <div
                 className="absolute top-full left-0 right-0 z-20 mt-1 max-h-36 overflow-y-auto bg-[#0A0A0F] border border-[#D4A017] rounded-xs shadow-2xl divide-y divide-[#3E2D17]/50"
                 onMouseLeave={() => setIsPartnerDropdownOpen(false)}
               >
-                <div 
+                <div
                   onClick={() => {
                     onFilterChange({ ...filterState, partnerEmail: '' });
                     setPartnerSearchTerm('');
@@ -539,7 +539,7 @@ export const TableFilterControl: React.FC<TableFilterControlProps> = ({
                 <span>Status Category</span>
               </div>
               {filterState.status && (
-                <button 
+                <button
                   onClick={() => onFilterChange({ ...filterState, status: '' })}
                   className="text-zinc-500 hover:text-white"
                   title="Clear Status"

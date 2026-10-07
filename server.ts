@@ -4,6 +4,7 @@ import express from 'express';
 import path from 'path';
 import dotenv from 'dotenv';
 import { createServer as createViteServer } from 'vite';
+import { createClient } from '@supabase/supabase-js';
 
 dotenv.config();
 
@@ -12,28 +13,81 @@ const PORT = 3000;
 
 app.use(express.json());
 
+// Inisialisasi Sambungan Supabase (IqwanEngine)
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+
+const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
 const MY_ENDPOINT = process.env.GOOGLE_SHEETS_MY_ENDPOINT || '';
 const ID_ENDPOINT = process.env.GOOGLE_SHEETS_ID_ENDPOINT || '';
+const ADMIN_KEY = process.env.ADMIN_DASHBOARD_KEY || 'IE_Admin#Gold2026!Master';
 
 function getCleanUrl(endpoint: string) {
   if (!endpoint) return '';
-  return endpoint.split('?')[0] + '?action=fetch';
+  return endpoint.split('?')[0] + `?action=fetch&key=${encodeURIComponent(ADMIN_KEY)}`;
 }
 
 const DEFAULT_ALLOWED_EMAILS = process.env.ADMIN_ALLOWED_EMAILS || '';
 
-// In-memory cache & fallback retention for high-performance low-latency response
 interface CachePayload {
   data: any;
   timestamp: number;
 }
 let cachedTraders: CachePayload | null = null;
-const CACHE_TTL_MS = 25000; // 25 seconds cache TTL for low-latency live polling
+const CACHE_TTL_MS = 25000;
 
-// Retain last known successful data per country so temporary GAS network blips never wipe out data
 let lastKnownMY: any[] = [];
 let lastKnownID: any[] = [];
 
+// ==========================================
+// 1. Tarik Keseluruhan Data Malaysia Dari Supabase (Melepasi Had 1,000)
+// ==========================================
+async function fetchFromSupabaseMY(): Promise<any[]> {
+  try {
+    let allRecords: any[] = [];
+    let from = 0;
+    const step = 1000;
+    let hasMore = true;
+
+    while (hasMore) {
+      const { data, error } = await supabase
+        .from('vip_clients')
+        .select('*')
+        .order('id', { ascending: false })
+        .range(from, from + step - 1);
+
+      if (error) {
+        console.warn('[IqwanEngine] Supabase fetch notice:', error.message);
+        break;
+      }
+
+      if (data && data.length > 0) {
+        allRecords = allRecords.concat(data);
+        if (data.length < step) {
+          hasMore = false;
+        } else {
+          from += step;
+        }
+      } else {
+        hasMore = false;
+      }
+    }
+
+    if (allRecords.length > 0) {
+      lastKnownMY = allRecords;
+      return allRecords;
+    }
+    return lastKnownMY;
+  } catch (err: any) {
+    console.error('[IqwanEngine] Supabase fetch exception:', err.message);
+    return lastKnownMY;
+  }
+}
+
+// ==========================================
+// 2. Tarik Data Indonesia Dari GAS (Asal / Direct GAS)
+// ==========================================
 async function fetchFromEndpointWithRetry(url: string, country: 'MY' | 'ID', retries = 2): Promise<any[]> {
   const cleanUrl = getCleanUrl(url);
   if (!cleanUrl) return [];
@@ -61,93 +115,61 @@ async function fetchFromEndpointWithRetry(url: string, country: 'MY' | 'ID', ret
       let json: any = null;
       try {
         json = JSON.parse(text);
-      } catch (parseErr) {
-        console.warn(`[IqwanEngine] Non-JSON response from ${country} endpoint:`, text.substring(0, 100));
+      } catch {
         throw new Error('Invalid JSON received from upstream Google Apps Script');
       }
 
       let records: any[] = [];
-      if (json && Array.isArray(json.data)) {
-        records = json.data;
-      } else if (Array.isArray(json)) {
-        records = json;
-      } else if (json && Array.isArray(json.results)) {
-        records = json.results;
-      } else if (json && Array.isArray(json.records)) {
-        records = json.records;
-      }
+      if (json && Array.isArray(json.data)) records = json.data;
+      else if (Array.isArray(json)) records = json;
+      else if (json && Array.isArray(json.results)) records = json.results;
+      else if (json && Array.isArray(json.records)) records = json.records;
 
       if (records && records.length > 0) {
-        if (country === 'MY') lastKnownMY = records;
         if (country === 'ID') lastKnownID = records;
         return records;
       }
 
-      // If empty array returned but we have fallback
-      if (records.length === 0 && (country === 'MY' ? lastKnownMY : lastKnownID).length > 0) {
-        return country === 'MY' ? lastKnownMY : lastKnownID;
+      if (records.length === 0 && country === 'ID' && lastKnownID.length > 0) {
+        return lastKnownID;
       }
 
       return records;
     } catch (error: any) {
       console.warn(`[IqwanEngine] Fetch attempt ${attempt + 1}/${retries + 1} for ${country} failed:`, error.message);
       if (attempt < retries) {
-        // Wait 800ms before retry
         await new Promise(r => setTimeout(r, 800));
       }
     }
   }
 
-  // Graceful fallback to retained data
-  const fallback = country === 'MY' ? lastKnownMY : lastKnownID;
-  if (fallback && fallback.length > 0) {
-    return fallback;
+  if (country === 'ID' && lastKnownID && lastKnownID.length > 0) {
+    return lastKnownID;
   }
 
   return [];
 }
 
-/**
- * Smart regional phone sanitization supporting Malaysian (+60) and Indonesian (+62) numbers.
- */
 function sanitizePhone_(rawPhone: any, region: 'MY' | 'ID' = 'MY'): string {
   if (!rawPhone || String(rawPhone).trim() === '' || String(rawPhone).trim() === '-') {
     return '-';
   }
 
-  // 1.1 Character Stripping: Remove all non-digit characters except the leading plus sign
   let cleaned = String(rawPhone).trim();
   const hasLeadingPlus = cleaned.startsWith('+');
   cleaned = cleaned.replace(/[^\d+]/g, '');
 
-  if (cleaned.startsWith('+')) {
-    cleaned = '+' + cleaned.substring(1).replace(/\+/g, '');
-  } else if (hasLeadingPlus) {
-    cleaned = '+' + cleaned.replace(/\+/g, '');
-  }
+  if (cleaned.startsWith('+')) cleaned = '+' + cleaned.substring(1).replace(/\+/g, '');
+  else if (hasLeadingPlus) cleaned = '+' + cleaned.replace(/\+/g, '');
 
-  if (!cleaned || cleaned === '+') {
-    return '-';
-  }
+  if (!cleaned || cleaned === '+') return '-';
 
-  // 1.2 Explicit International Formats
-  if (cleaned.startsWith('+60') || cleaned.startsWith('+62')) {
-    return cleaned;
-  }
-  if (cleaned.startsWith('60') && cleaned.length >= 9) {
-    return '+' + cleaned;
-  }
-  if (cleaned.startsWith('62') && cleaned.length >= 9) {
-    return '+' + cleaned;
-  }
+  if (cleaned.startsWith('+60') || cleaned.startsWith('+62')) return cleaned;
+  if (cleaned.startsWith('60') && cleaned.length >= 9) return '+' + cleaned;
+  if (cleaned.startsWith('62') && cleaned.length >= 9) return '+' + cleaned;
 
-  // 1.3 Local Zero Prefix Smart Routing
-  if (cleaned.startsWith('08')) {
-    return '+62' + cleaned.substring(1);
-  }
-  if (cleaned.startsWith('01')) {
-    return '+60' + cleaned.substring(1);
-  }
+  if (cleaned.startsWith('08')) return '+62' + cleaned.substring(1);
+  if (cleaned.startsWith('01')) return '+60' + cleaned.substring(1);
   if (cleaned.startsWith('0')) {
     const prefix = region === 'ID' ? '+62' : '+60';
     return prefix + cleaned.substring(1);
@@ -157,28 +179,19 @@ function sanitizePhone_(rawPhone: any, region: 'MY' | 'ID' = 'MY'): string {
   return defaultPrefix + cleaned;
 }
 
-/**
- * Clean and safely parse balance, equity, credit, and margin values from raw inputs.
- * Strips thousand-separator commas, currency symbols, and handles Cent / N/A values.
- */
 function sanitizeBalance(raw: any, accountType: string = '', currency: string = ''): number {
   if (raw === undefined || raw === null) return 0;
-  if (typeof raw === 'number') {
-    return isNaN(raw) ? 0 : raw;
-  }
+  if (typeof raw === 'number') return isNaN(raw) ? 0 : raw;
   const str = String(raw).trim();
   if (str === '' || str === '-' || /n\/?a/i.test(str)) return 0;
 
-  // Remove thousand commas and any non-numeric characters except minus and period
   const cleaned = str.replace(/,/g, '').replace(/[^0-9.-]/g, '');
   const num = parseFloat(cleaned);
-  if (isNaN(num)) return 0;
-
-  return num;
+  return isNaN(num) ? 0 : num;
 }
 
 function normalizeRawRecord(raw: any, country: 'MY' | 'ID', index: number) {
-  const rowIdx = raw.row_index ?? index + 1;
+  const rowIdx = raw.row_index ?? raw.rowIndex ?? raw.id ?? (index + 7);
   const traderName = String(raw.trader_name || 'UNKNOWN TRADER').trim().toUpperCase();
   const contactNumber = sanitizePhone_(raw.contact_number, country);
   const registerEmail = String(raw.register_email || '').trim().toLowerCase();
@@ -226,10 +239,6 @@ function normalizeRawRecord(raw: any, country: 'MY' | 'ID', index: number) {
     }
   }
 
-  // 1. FIX "LAST UPDATED" DATA MAPPING (COLUMN W / COLUMN 23 INTEGRATION)
-  // Read review timestamp directly from Column W (Column 23 - "Updated TIME")
-  // If Column W contains a timestamp, format as "YYYY-MM-DD HH:mm:ss" in GMT+8
-  // If unreviewed, Column W is "-", and MUST display "-" (no fallback to creation date or registration date!)
   let lastUpdateFormatted = '-';
   const rawUpdatedTime = raw.updated_time ?? raw.last_update ?? raw.updated_time_col_w ?? raw.review_time ?? raw.last_updated ?? raw.col_w;
 
@@ -238,7 +247,6 @@ function normalizeRawRecord(raw: any, country: 'MY' | 'ID', index: number) {
     try {
       const d = new Date(timeStr);
       if (!isNaN(d.getTime())) {
-        // Format in GMT+8 / Asia/Kuala_Lumpur as YYYY-MM-DD HH:mm:ss
         const formatter = new Intl.DateTimeFormat('en-CA', {
           timeZone: 'Asia/Kuala_Lumpur',
           year: 'numeric',
@@ -312,12 +320,9 @@ function calculateCountryMetrics(traders: any[], country: 'MY' | 'ID') {
     const accType = (trader.accountType || trader.account_type || "").toLowerCase();
     const curr = (trader.currency || "").toUpperCase();
 
-    // Convert Cent (USC) to USD Base (divide by 100)
     if (accType.includes("cent") || curr === "USC") {
       num = num / 100.0;
-    }
-    // Convert Indonesian Rupiah (IDR) to USD Base if applicable
-    else if (curr === "IDR") {
+    } else if (curr === "IDR") {
       num = num / 15500.0;
     }
 
@@ -333,19 +338,11 @@ function calculateCountryMetrics(traders: any[], country: 'MY' | 'ID') {
       statusCounts.validVip++;
     } else if (normalizedStatus === 'ACTIVE' || normalizedStatus === 'VALID') {
       statusCounts.active++;
-    } else if (
-      normalizedStatus === 'LOW BAL' ||
-      normalizedStatus === 'LOW BALANCE' ||
-      normalizedStatus.includes('LOW')
-    ) {
+    } else if (normalizedStatus.includes('LOW')) {
       statusCounts.lowBal++;
     } else if (normalizedStatus === 'MC' || normalizedStatus.includes('MARGIN CALL')) {
       statusCounts.mc++;
-    } else if (
-      normalizedStatus === 'NOT VALID' ||
-      normalizedStatus === 'INVALID' ||
-      normalizedStatus.includes('NOT')
-    ) {
+    } else if (normalizedStatus.includes('NOT') || normalizedStatus.includes('INVALID')) {
       statusCounts.notValid++;
     } else {
       statusCounts.other++;
@@ -367,8 +364,8 @@ async function generateTradersPayload(): Promise<any> {
 
   try {
     const results = await Promise.allSettled([
-      fetchFromEndpointWithRetry(MY_ENDPOINT, 'MY'),
-      fetchFromEndpointWithRetry(ID_ENDPOINT, 'ID')
+      fetchFromSupabaseMY(),                     // Malaysia ditarik dari Supabase (Pantas & Melepasi 1000 rekod)
+      fetchFromEndpointWithRetry(ID_ENDPOINT, 'ID') // Indonesia kekal direct GAS asal (Tanpa sentuh)
     ]);
 
     if (results[0].status === 'fulfilled' && Array.isArray(results[0].value)) {
@@ -388,7 +385,6 @@ async function generateTradersPayload(): Promise<any> {
     rawID = lastKnownID;
   }
 
-  // Normalize & Sort descending by registration date (latest on top)
   const sortFn = (a: any, b: any) => {
     const timeA = a.registerDate ? new Date(a.registerDate).getTime() : 0;
     const timeB = b.registerDate ? new Date(b.registerDate).getTime() : 0;
@@ -401,7 +397,6 @@ async function generateTradersPayload(): Promise<any> {
   const myTraders = (rawMY || []).map((r, i) => normalizeRawRecord(r, 'MY', i)).filter(Boolean).sort(sortFn);
   const idTraders = (rawID || []).map((r, i) => normalizeRawRecord(r, 'ID', i)).filter(Boolean).sort(sortFn);
 
-  // Determine latest registration date across all data
   let latestRegistrationDate: string | null = null;
   const allRegisteredDates = [...myTraders, ...idTraders]
     .map(t => t.registerDate)
@@ -461,12 +456,10 @@ let inFlightPromise: Promise<any> | null = null;
 
 async function getOrFetchTradersPayload(forceRefresh = false): Promise<any> {
   const now = Date.now();
-  // Return cached payload immediately if fresh
   if (!forceRefresh && cachedTraders && (now - cachedTraders.timestamp < CACHE_TTL_MS)) {
     return cachedTraders.data;
   }
 
-  // If stale but cached payload exists, return cached and refresh asynchronously in background
   if (!forceRefresh && cachedTraders) {
     if (!inFlightPromise) {
       inFlightPromise = generateTradersPayload().then(payload => {
@@ -482,24 +475,16 @@ async function getOrFetchTradersPayload(forceRefresh = false): Promise<any> {
     return cachedTraders.data;
   }
 
-  if (inFlightPromise) {
-    return inFlightPromise;
-  }
+  if (inFlightPromise) return inFlightPromise;
 
   inFlightPromise = (async () => {
     try {
       const payload = await generateTradersPayload();
-      cachedTraders = {
-        data: payload,
-        timestamp: Date.now()
-      };
+      cachedTraders = { data: payload, timestamp: Date.now() };
       return payload;
     } catch (err: any) {
       console.warn('[IqwanEngine] Primary payload generation notice:', err.message);
-      if (cachedTraders) {
-        return cachedTraders.data;
-      }
-      // If absolutely no cache yet, return safe empty structure
+      if (cachedTraders) return cachedTraders.data;
       const emptyPayload = {
         success: true,
         isStale: true,
@@ -523,58 +508,31 @@ async function getOrFetchTradersPayload(forceRefresh = false): Promise<any> {
   return inFlightPromise;
 }
 
-// 1. Backend Proxy Route for Traders API
+// 1. API Route untuk Traders
 app.get('/api/traders', async (req, res) => {
   const forceRefresh = req.query.fresh === 'true';
-
   try {
     const payload = await getOrFetchTradersPayload(forceRefresh);
     res.json(payload);
   } catch (error: any) {
-    console.error('[IqwanEngine] Unexpected /api/traders handler exception:', error);
-    if (cachedTraders) {
-      return res.json({
-        ...cachedTraders.data,
-        isStale: true,
-        warning: 'Serving cached snapshot.'
-      });
-    }
+    console.error('[IqwanEngine] Exception /api/traders:', error);
     res.json({
       success: true,
-      isStale: true,
-      timestamp: new Date().toISOString(),
-      latestRegistrationDate: null,
-      lastUpdateByEngine: new Date().toISOString(),
       data: {
-        malaysia: lastKnownMY.map((r, i) => normalizeRawRecord(r, 'MY', i)).filter(Boolean),
-        indonesia: lastKnownID.map((r, i) => normalizeRawRecord(r, 'ID', i)).filter(Boolean)
-      },
-      metrics: {
-        malaysia: calculateCountryMetrics(lastKnownMY, 'MY'),
-        indonesia: calculateCountryMetrics(lastKnownID, 'ID'),
-        combined: {
-          totalTraders: lastKnownMY.length + lastKnownID.length,
-          totalBalanceUSD: 0
-        }
+        malaysia: lastKnownMY.map((r, i) => normalizeRawRecord(r, 'MY', i)),
+        indonesia: lastKnownID.map((r, i) => normalizeRawRecord(r, 'ID', i))
       }
     });
   }
 });
 
-// 2. Dual Action Endpoints: [ TICK / VERIFY ] and [ DELETE ]
-
-// A. Verify / Mark as Checked (Update Column W in Google Sheets)
+// 2. Dual Action Verify / Review (Supabase + GAS)
 app.post('/api/traders/verify', async (req, res) => {
   try {
     const { country, rowIndex, valetaxId, timestamp } = req.body || {};
     const targetCountry: 'MY' | 'ID' = country === 'ID' ? 'ID' : 'MY';
     const targetRowIndex = Number(rowIndex);
 
-    if (!targetRowIndex || isNaN(targetRowIndex)) {
-      return res.status(400).json({ success: false, error: 'Valid rowIndex is required' });
-    }
-
-    // Format GMT+8 timestamp as YYYY-MM-DD HH:mm:ss
     const now = new Date();
     const formatter = new Intl.DateTimeFormat('en-CA', {
       timeZone: 'Asia/Kuala_Lumpur',
@@ -589,87 +547,71 @@ app.post('/api/traders/verify', async (req, res) => {
     const parts = formatter.formatToParts(now);
     const map: Record<string, string> = {};
     for (const p of parts) map[p.type] = p.value;
-    const gmt8Time = `${map.year}-${map.month}-${map.day} ${map.hour}:${map.minute}:${map.second}`;
-    const finalTimestamp = timestamp || gmt8Time;
+    const finalTimestamp = timestamp || `${map.year}-${map.month}-${map.day} ${map.hour}:${map.minute}:${map.second}`;
 
+    // Kemaskini Supabase untuk Malaysia
+    if (targetCountry === 'MY') {
+      await supabase
+        .from('vip_clients')
+        .update({ last_update: finalTimestamp })
+        .eq('valetax_id', String(valetaxId));
+    }
+
+    // Selaraskan ke GAS Google Sheets
     const endpoint = targetCountry === 'MY' ? MY_ENDPOINT : ID_ENDPOINT;
     const cleanBaseUrl = endpoint.split('?')[0];
 
-    // Forward to Google Apps Script
     try {
       const updateUrl = `${cleanBaseUrl}?action=updateReviewTime&rowIndex=${targetRowIndex}&timestamp=${encodeURIComponent(finalTimestamp)}`;
-      fetch(updateUrl, {
-        method: 'GET',
-        headers: { 'User-Agent': 'OwlAlgo-IqwanEngine/2.0' }
-      }).catch(err => {
-        console.warn(`[IqwanEngine] Remote GAS review update notice (${targetCountry}):`, err.message);
-      });
-    } catch (gasErr: any) {
-      console.warn('[IqwanEngine] GAS forward dispatch error:', gasErr.message);
-    }
+      fetch(updateUrl, { method: 'GET', headers: { 'User-Agent': 'OwlAlgo-IqwanEngine/2.0' } }).catch(() => {});
+    } catch {}
 
-    // Optimistically update in-memory cache
+    // Kemaskini cache dalam memori
     if (cachedTraders && cachedTraders.data) {
       const key = targetCountry === 'MY' ? 'malaysia' : 'indonesia';
       const list = cachedTraders.data[key];
       if (Array.isArray(list)) {
         const item = list.find((t: any) => t.rowIndex === targetRowIndex || (valetaxId && String(t.valetaxId) === String(valetaxId)));
-        if (item) {
-          item.lastUpdateFormatted = finalTimestamp;
-          if (item.raw) item.raw.updated_time = finalTimestamp;
-        }
+        if (item) item.lastUpdateFormatted = finalTimestamp;
       }
-    }
-
-    // Also update in lastKnown retained lists
-    const rawList = targetCountry === 'MY' ? lastKnownMY : lastKnownID;
-    const rawItem = rawList.find((r: any) => (r.row_index === targetRowIndex) || (valetaxId && String(r.valetax_id) === String(valetaxId)));
-    if (rawItem) {
-      rawItem.updated_time = finalTimestamp;
-      rawItem.last_update = finalTimestamp;
     }
 
     res.json({
       success: true,
       updatedTime: finalTimestamp,
       rowIndex: targetRowIndex,
-      country: targetCountry,
-      message: `Trader Row #${targetRowIndex} verified successfully at ${finalTimestamp} (GMT+8)`
+      country: targetCountry
     });
   } catch (error: any) {
-    console.error('[IqwanEngine] Error in /api/traders/verify:', error);
     res.status(500).json({ success: false, error: error.message });
   }
 });
 
-// B. Delete Trader Record (Delete row from Google Sheets)
+// 3. Dual Action Delete (Supabase + GAS)
 app.post('/api/traders/delete', async (req, res) => {
   try {
     const { country, rowIndex, valetaxId } = req.body || {};
     const targetCountry: 'MY' | 'ID' = country === 'ID' ? 'ID' : 'MY';
     const targetRowIndex = Number(rowIndex);
 
-    if (!targetRowIndex || isNaN(targetRowIndex)) {
-      return res.status(400).json({ success: false, error: 'Valid rowIndex is required' });
+    // Kemaskini Supabase untuk Malaysia
+    if (targetCountry === 'MY') {
+      await supabase
+        .from('vip_clients')
+        .update({ status: 'Deleted', updated_by: 'Admin System' })
+        .eq('valetax_id', String(valetaxId));
     }
 
+    // Selaraskan pemadaman ke GAS Google Sheets
     const endpoint = targetCountry === 'MY' ? MY_ENDPOINT : ID_ENDPOINT;
     const cleanBaseUrl = endpoint.split('?')[0];
 
-    // Forward deletion to Google Apps Script
     try {
       const deleteUrl = `${cleanBaseUrl}?action=deleteVIPRecord&rowIndex=${targetRowIndex}`;
-      fetch(deleteUrl, {
-        method: 'GET',
-        headers: { 'User-Agent': 'OwlAlgo-IqwanEngine/2.0' }
-      }).catch(err => {
-        console.warn(`[IqwanEngine] Remote GAS delete notice (${targetCountry}):`, err.message);
-      });
-    } catch (gasErr: any) {
-      console.warn('[IqwanEngine] GAS delete forward dispatch error:', gasErr.message);
-    }
+      fetch(deleteUrl, { method: 'GET', headers: { 'User-Agent': 'OwlAlgo-IqwanEngine/2.0' } }).catch(() => {});
+    } catch {}
 
-    // Optimistically remove from in-memory cache
+    // Keluarkan dari cache dalam memori
     if (cachedTraders && cachedTraders.data) {
       const key = targetCountry === 'MY' ? 'malaysia' : 'indonesia';
       if (Array.isArray(cachedTraders.data[key])) {
@@ -677,50 +619,24 @@ app.post('/api/traders/delete', async (req, res) => {
           (t: any) => t.rowIndex !== targetRowIndex && (!valetaxId || String(t.valetaxId) !== String(valetaxId))
         );
       }
-      // Recalculate metrics
-      const myMetrics = calculateCountryMetrics(cachedTraders.data.malaysia, 'MY');
-      const idMetrics = calculateCountryMetrics(cachedTraders.data.indonesia, 'ID');
-      cachedTraders.data.metrics = {
-        malaysia: myMetrics,
-        indonesia: idMetrics,
-        combined: {
-          totalTraders: cachedTraders.data.malaysia.length + cachedTraders.data.indonesia.length,
-          totalBalanceUSD: myMetrics.totalBalanceUSD + idMetrics.totalBalanceUSD
-        }
-      };
-    }
-
-    // Also remove from lastKnown lists
-    if (targetCountry === 'MY') {
-      lastKnownMY = lastKnownMY.filter((r: any) => r.row_index !== targetRowIndex && (!valetaxId || String(r.valetax_id) !== String(valetaxId)));
-    } else {
-      lastKnownID = lastKnownID.filter((r: any) => r.row_index !== targetRowIndex && (!valetaxId || String(r.valetax_id) !== String(valetaxId)));
     }
 
     res.json({
       success: true,
       rowIndex: targetRowIndex,
-      country: targetCountry,
-      message: `Trader Row #${targetRowIndex} deleted successfully from ${targetCountry} database`
+      country: targetCountry
     });
   } catch (error: any) {
-    console.error('[IqwanEngine] Error in /api/traders/delete:', error);
     res.status(500).json({ success: false, error: error.message });
   }
 });
 
-// 3. Authentication & Whitelist Verification Endpoints
+// 4. Pengesahan Whitelist & Sesi Log Masuk
 app.get('/api/auth/whitelist', (req, res) => {
   const email = (req.query.email as string || '').trim().toLowerCase();
   const rawList = process.env.ADMIN_ALLOWED_EMAILS || DEFAULT_ALLOWED_EMAILS;
   const allowed = rawList.split(',').map(e => e.trim().toLowerCase()).filter(Boolean);
-
-  const isWhitelisted = allowed.includes(email);
-  res.json({
-    email,
-    isWhitelisted,
-    allowedCount: allowed.length
-  });
+  res.json({ email, isWhitelisted: allowed.includes(email) });
 });
 
 app.post('/api/auth/session', (req, res) => {
@@ -729,18 +645,8 @@ app.post('/api/auth/session', (req, res) => {
   const rawList = process.env.ADMIN_ALLOWED_EMAILS || DEFAULT_ALLOWED_EMAILS;
   const allowed = rawList.split(',').map(e => e.trim().toLowerCase()).filter(Boolean);
 
-  if (!normalizedEmail) {
-    return res.status(400).json({ success: false, error: 'Email is required' });
-  }
-
-  const isAuthorized = allowed.includes(normalizedEmail);
-  if (!isAuthorized) {
-    return res.status(403).json({
-      success: false,
-      error: 'Unauthorized Email',
-      message: 'Access Denied: Your email is not whitelisted in ADMIN_ALLOWED_EMAILS.',
-      email: normalizedEmail
-    });
+  if (!normalizedEmail || !allowed.includes(normalizedEmail)) {
+    return res.status(403).json({ success: false, error: 'Unauthorized Email' });
   }
 
   res.json({
@@ -754,7 +660,7 @@ app.post('/api/auth/session', (req, res) => {
   });
 });
 
-// 3. Mount Vite / Static Files Middleware
+// 5. Sambungan Vite SPA
 async function startServer() {
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({
@@ -772,9 +678,7 @@ async function startServer() {
 
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`[IqwanEngine] OWL ALGO DATABASE Server running on http://0.0.0.0:${PORT}`);
-    // Initial cache warm-up asynchronously so first user requests are near-instant
     getOrFetchTradersPayload().catch(() => {});
-    // Periodic background sync every 30 seconds
     setInterval(() => {
       getOrFetchTradersPayload(true).catch(() => {});
     }, 30000);

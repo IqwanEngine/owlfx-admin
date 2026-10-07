@@ -1,12 +1,12 @@
 /* Powered by IqwanEngine */
 
 import React, { useState } from 'react';
-import { 
-  Check, 
-  X, 
-  Copy, 
-  MessageCircle, 
-  Loader2, 
+import {
+  Check,
+  X,
+  Copy,
+  MessageCircle,
+  Loader2,
   AlertCircle,
 } from 'lucide-react';
 import { TraderRecord, MultiColumnFilterState } from '../types';
@@ -23,7 +23,7 @@ interface TradersTableProps {
   onVerifyTrader: (trader: TraderRecord) => void;
   onSelectTrader: (trader: TraderRecord) => void;
   onPromptDeleteTrader: (trader: TraderRecord) => void;
-  
+
   // Filtering Props
   filterState: MultiColumnFilterState;
   onFilterChange: (state: MultiColumnFilterState) => void;
@@ -56,7 +56,7 @@ export const TradersTable: React.FC<TradersTableProps> = ({
   const safeTraders = Array.isArray(traders) ? traders : [];
   const totalPages = Math.ceil(safeTraders.length / ITEMS_PER_PAGE) || 1;
   const validCurrentPage = Math.min(currentPage, totalPages);
-  
+
   const startIndex = (validCurrentPage - 1) * ITEMS_PER_PAGE;
   const currentTraders = safeTraders.slice(startIndex, startIndex + ITEMS_PER_PAGE);
 
@@ -77,7 +77,7 @@ export const TradersTable: React.FC<TradersTableProps> = ({
   const getStatusBadge = (status: string) => {
     const s = (status || "").toUpperCase().trim();
     let styles = "bg-slate-500/10 text-slate-400 border-slate-500/20";
-    
+
     if (s === 'ACTIVE' || s === 'VALID') styles = "bg-emerald-500/10 text-emerald-400 border-emerald-500/20";
     else if (s.includes('LOW')) styles = "bg-amber-500/10 text-amber-400 border-amber-500/20";
     else if (s.includes('MC') || s.includes('MARGIN CALL')) styles = "bg-rose-500/10 text-rose-400 border-rose-500/20";
@@ -154,10 +154,10 @@ export const TradersTable: React.FC<TradersTableProps> = ({
               <th className="py-2 px-3 min-w-[100px]">Valetax ID</th>
               <th className="py-2 px-3 min-w-[130px]">Register Date</th>
               <th className="py-2 px-3 min-w-[100px] text-right">Balance</th>
-              <th className="py-2 px-3 min-w-[90px]">Account Type</th>
+              <th className="py-2 px-3 min-w-[90px]">Type</th>
               <th className="py-2 px-3 min-w-[150px]">Partner Email</th>
               <th className="py-2 px-3 min-w-[110px] text-center">Status</th>
-              <th className="py-2 px-3 min-w-[140px]">Last Updated (Col W)</th>
+              <th className="py-2 px-3 min-w-[140px]">Last Updated</th>
             </tr>
           </thead>
 
@@ -225,7 +225,7 @@ export const TradersTable: React.FC<TradersTableProps> = ({
                     </td>
 
                     <td className="px-3 py-1.5 text-[#E2E8F0] font-sans font-medium uppercase truncate max-w-[180px]" title={t.traderName}>{t.traderName}</td>
-                    
+
                     <td className="px-3 py-1.5 whitespace-nowrap">
                       {(() => {
                         const waUrl = generateWhatsAppLink(t.contactNumber, t.traderName, t.valetaxId, t.country);
@@ -254,7 +254,31 @@ export const TradersTable: React.FC<TradersTableProps> = ({
                     </td>
 
                     <td className="px-3 py-1.5 text-white/50 lowercase truncate max-w-[160px]" title={t.registerEmail}>{t.registerEmail || '-'}</td>
-                    <td className="px-3 py-1.5 text-[#F3C677] truncate max-w-[130px]" title={t.tradingViewUsername}>{t.tradingViewUsername || '-'}</td>
+                    <td className="px-3 py-1.5 text-[#F3C677] group">
+                      {t.tradingViewUsername && t.tradingViewUsername !== '-' ? (
+                        <div className="flex items-center gap-1.5">
+                          <span className="truncate max-w-[130px]" title={t.tradingViewUsername}>
+                            {t.tradingViewUsername}
+                          </span>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleCopy(t.tradingViewUsername, `tv-${t.id}`, e);
+                            }}
+                            className="opacity-0 group-hover:opacity-100 text-[#D4A017]/70 hover:text-[#D4A017] p-0.5 transition-opacity"
+                            title="Copy TradingView Username"
+                          >
+                            {copiedId === `tv-${t.id}` ? (
+                              <Check className="w-2.5 h-2.5 text-emerald-400" />
+                            ) : (
+                              <Copy className="w-2.5 h-2.5" />
+                            )}
+                          </button>
+                        </div>
+                      ) : (
+                        <span className="text-white/40 font-mono">-</span>
+                      )}
+                    </td>
                     <td className="px-3 py-1.5 text-[#D4A017] font-bold">{t.valetaxId || '-'}</td>
                     <td className="px-3 py-1.5 text-white/60 whitespace-nowrap">{t.registerDateFormatted}</td>
                     <td className="px-3 py-1.5 text-right font-bold text-emerald-400 whitespace-nowrap">{formatCurrency(t.balance, t.currency)}</td>

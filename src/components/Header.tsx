@@ -1,17 +1,17 @@
 /* Powered by IqwanEngine */
 
 import React, { useEffect, useState } from 'react';
-import { 
-  ShieldCheck, 
-  RefreshCw, 
-  Clock, 
-  Database, 
-  Sparkles, 
-  Lock, 
-  LogOut, 
-  UserCheck, 
-  Zap, 
-  Activity 
+import {
+  ShieldCheck,
+  RefreshCw,
+  Clock,
+  Database,
+  Sparkles,
+  Lock,
+  LogOut,
+  UserCheck,
+  Zap,
+  Activity
 } from 'lucide-react';
 import { AuthUser } from '../types';
 
@@ -106,7 +106,7 @@ export const Header: React.FC<HeaderProps> = ({
           {/* Last Engine Sync */}
           <div className="flex flex-col text-left md:text-right md:border-l md:border-[#3E2D17] md:pl-6">
             <span className="text-[#D4A017]/60 uppercase text-[8px] tracking-wider font-semibold">
-              Engine Sync ({nextSyncSeconds}s)
+              OWL_ENGINE SYNC ({nextSyncSeconds}s)
             </span>
             <span className="text-[#D4A017] flex items-center gap-1 font-bold">
               <span className={`w-1.5 h-1.5 bg-[#D4A017] rounded-full ${isSyncing ? 'animate-ping' : 'animate-pulse'}`} />
@@ -118,11 +118,11 @@ export const Header: React.FC<HeaderProps> = ({
           <div className="flex items-center gap-2 md:border-l md:border-[#3E2D17] md:pl-6">
             <button
               onClick={onOpenAppsScriptModal}
-              title="View & Copy Google Apps Script 23-Column Integration Code"
+              title="View or Check IqwanEngine punya coding"
               className="px-2 py-1 bg-[#1A1408] border border-[#D4A017]/40 text-[#D4A017] hover:bg-[#D4A017] hover:text-black rounded-xs text-[9px] font-bold uppercase transition-colors flex items-center gap-1 cursor-pointer"
             >
               <Database className="w-3 h-3" />
-              <span className="hidden sm:inline">Apps Script</span>
+              <span className="hidden sm:inline">I.E SCRIPT</span>
             </button>
 
             <button
@@ -140,7 +140,7 @@ export const Header: React.FC<HeaderProps> = ({
             <div className="flex items-center gap-2 md:border-l md:border-[#3E2D17] md:pl-6">
               <div className="flex flex-col text-left md:text-right">
                 <span className="text-[#D4A017]/60 uppercase text-[8px] tracking-wider font-semibold">
-                  SECURED AUTH
+                  OWLFX USER
                 </span>
                 <span className="text-[#F3C677] text-[10px] font-mono truncate max-w-[130px]" title={currentUser.email}>
                   {currentUser.email}

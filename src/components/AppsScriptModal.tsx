@@ -25,14 +25,14 @@ export const AppsScriptModal: React.FC<AppsScriptModalProps> = ({
 
 function doGet(e) {
   var action = (e && e.parameter && e.parameter.action) || 'fetch';
-  
+
   if (action === 'fetch') {
     return ContentService.createTextOutput(JSON.stringify({
       status: 'success',
       data: getVIPData()
     })).setMimeType(ContentService.MimeType.JSON);
   }
-  
+
   if (action === 'updateReviewTime' || action === 'verify') {
     var rowIndex = parseInt(e.parameter.rowIndex || e.parameter.row_index, 10);
     var timestamp = e.parameter.timestamp || Utilities.formatDate(new Date(), 'GMT+8', 'yyyy-MM-dd HH:mm:ss');
@@ -40,14 +40,14 @@ function doGet(e) {
     return ContentService.createTextOutput(JSON.stringify(result))
       .setMimeType(ContentService.MimeType.JSON);
   }
-  
+
   if (action === 'deleteVIPRecord' || action === 'delete') {
     var delRowIndex = parseInt(e.parameter.rowIndex || e.parameter.row_index, 10);
     var delResult = deleteVIPRecord(delRowIndex);
     return ContentService.createTextOutput(JSON.stringify(delResult))
       .setMimeType(ContentService.MimeType.JSON);
   }
-  
+
   return ContentService.createTextOutput(JSON.stringify({
     status: 'error',
     message: 'Unknown action: ' + action
@@ -66,9 +66,9 @@ function doPost(e) {
     } else if (e && e.parameter) {
       postData = e.parameter;
     }
-    
+
     var action = postData.action || 'verify';
-    
+
     if (action === 'updateReviewTime' || action === 'verify') {
       var rowIndex = parseInt(postData.rowIndex || postData.row_index, 10);
       var timestamp = postData.timestamp || Utilities.formatDate(new Date(), 'GMT+8', 'yyyy-MM-dd HH:mm:ss');
@@ -76,20 +76,20 @@ function doPost(e) {
       return ContentService.createTextOutput(JSON.stringify(result))
         .setMimeType(ContentService.MimeType.JSON);
     }
-    
+
     if (action === 'deleteVIPRecord' || action === 'delete') {
       var delRowIndex = parseInt(postData.rowIndex || postData.row_index, 10);
       var delResult = deleteVIPRecord(delRowIndex);
       return ContentService.createTextOutput(JSON.stringify(delResult))
         .setMimeType(ContentService.MimeType.JSON);
     }
-    
+
     if (action === 'add') {
       var addResult = addVIPRecord(postData);
       return ContentService.createTextOutput(JSON.stringify(addResult))
         .setMimeType(ContentService.MimeType.JSON);
     }
-    
+
     return ContentService.createTextOutput(JSON.stringify({
       status: 'error',
       message: 'Unknown POST action: ' + action
@@ -109,16 +109,16 @@ function getVIPData() {
   var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
   var lastRow = sheet.getLastRow();
   if (lastRow < 2) return [];
-  
+
   // Read 23 columns (Columns A through W)
   var range = sheet.getRange(2, 1, lastRow - 1, 23);
   var values = range.getValues();
   var results = [];
-  
+
   for (var i = 0; i < values.length; i++) {
     var row = values[i];
     var actualRowIndex = i + 2;
-    
+
     // Column W is index 22 in zero-based array
     var updatedTimeVal = row[22] !== undefined && row[22] !== null && String(row[22]).trim() !== ''
       ? (row[22] instanceof Date ? Utilities.formatDate(row[22], 'GMT+8', 'yyyy-MM-dd HH:mm:ss') : String(row[22]).trim())
@@ -155,7 +155,7 @@ function getVIPData() {
       last_update: updatedTimeVal
     });
   }
-  
+
   return results;
 }
 
@@ -168,7 +168,7 @@ function sanitizeBalance(raw, accountType, currency) {
   if (typeof raw === 'number') return isNaN(raw) ? 0 : raw;
   var str = String(raw).trim();
   if (str === '' || str === '-' || /n\\/?a/i.test(str)) return 0;
-  
+
   // Remove thousand commas and non-numeric chars except minus and decimal point
   var cleaned = str.replace(/,/g, '').replace(/[^0-9.-]/g, '');
   var num = parseFloat(cleaned);
@@ -189,7 +189,7 @@ function sanitizePhone_(rawPhone, region) {
   var cleaned = String(rawPhone).trim();
   var hasLeadingPlus = cleaned.indexOf('+') === 0;
   cleaned = cleaned.replace(/[^\\d+]/g, '');
-  
+
   if (cleaned.indexOf('+') === 0) {
     cleaned = '+' + cleaned.substring(1).replace(/\\+/g, '');
   } else if (hasLeadingPlus) {
@@ -234,13 +234,13 @@ function updateReviewTime(rowIndex, timestamp) {
   if (!rowIndex || isNaN(rowIndex) || rowIndex < 2) {
     return { success: false, error: 'Invalid rowIndex' };
   }
-  
+
   var ts = timestamp || Utilities.formatDate(new Date(), 'GMT+8', 'yyyy-MM-dd HH:mm:ss');
   var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
-  
+
   // Set Column W (Column 23)
   sheet.getRange(rowIndex, 23).setValue(ts);
-  
+
   return {
     success: true,
     rowIndex: rowIndex,
@@ -256,10 +256,10 @@ function deleteVIPRecord(rowIndex) {
   if (!rowIndex || isNaN(rowIndex) || rowIndex < 2) {
     return { success: false, error: 'Invalid rowIndex' };
   }
-  
+
   var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
   sheet.deleteRow(rowIndex);
-  
+
   return {
     success: true,
     rowIndex: rowIndex,
@@ -309,7 +309,7 @@ function addVIPRecord(data) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-xs font-mono">
-      <div 
+      <div
         className="bg-[#0A0A0F] border border-[#3E2D17] w-full max-w-3xl rounded-sm shadow-2xl overflow-hidden flex flex-col max-h-[90vh]"
         onClick={(e) => e.stopPropagation()}
       >
@@ -321,10 +321,10 @@ function addVIPRecord(data) {
             </div>
             <div>
               <h3 className="text-xs font-bold text-[#D4A017] uppercase tracking-wider">
-                GOOGLE APPS SCRIPT BACKEND SYNC CODE (MY & ID)
+                IQWANENGINE BACKEND SYNC & ENDPOINTS
               </h3>
               <span className="text-[9px] text-[#A1A1AA] uppercase">
-                23-Column Integration (Col W Review Time) & Endpoints
+                Database to Admin Panel Integration
               </span>
             </div>
           </div>
@@ -340,7 +340,7 @@ function addVIPRecord(data) {
         <div className="bg-[#050505] px-4 py-2.5 border-b border-[#3E2D17] text-[10px] text-[#E2E8F0] flex items-center justify-between">
           <div className="flex items-center gap-2 text-zinc-400">
             <Database className="w-3.5 h-3.5 text-[#D4A017]" />
-            <span>Deploy in both Malaysia & Indonesia Apps Script projects as a Web App (Access: Anyone).</span>
+            <span>Deploy in both Malaysia & Indonesia OWLFX Database as a Web App (Access: Admin)</span>
           </div>
           <button
             onClick={handleCopy}

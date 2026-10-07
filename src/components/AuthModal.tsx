@@ -21,7 +21,7 @@ interface AuthModalProps {
   currentEmail?: string;
 }
 
-const DEFAULT_ALLOWED_EMAILS = 'hairuliqwan352@gmail.com,admin@owlfx.my,iqwan@owlfx.my,boyintraderz@gmail.com';
+const DEFAULT_ALLOWED_EMAILS = 'hairuliqwan352@gmail.com,admin@owlfx.my,syazzmir12@hotmail.com,iqwan@owlfx.my,boyintraderz@gmail.com';
 
 export const AuthModal: React.FC<AuthModalProps> = ({
   isOpen,
@@ -181,7 +181,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
     // CONSENSUS REACHED: Unlock local session immediately to prevent production hang
     localStorage.setItem('owlfx_auth_session', 'authenticated');
-    
+
     setLoading(true);
     try {
       // Still attempt to notify server/create session
