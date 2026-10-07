@@ -80,10 +80,10 @@ export const TradersTable: React.FC<TradersTableProps> = ({
 
     if (s === 'ACTIVE' || s === 'VALID') styles = "bg-emerald-500/10 text-emerald-400 border-emerald-500/20";
     else if (s.includes('LOW')) styles = "bg-amber-500/10 text-amber-400 border-amber-500/20";
-    else if (s.includes('MC') || s.includes('MARGIN CALL')) styles = "bg-rose-500/10 text-rose-400 border-rose-500/20";
-    else if (s.includes('VALID VIP') && !s.includes('INDICATOR')) styles = "bg-blue-500/10 text-blue-400 border-blue-500/20";
-    else if (s.includes('VIP INDICATOR')) styles = "bg-[#D4A017]/10 text-[#D4A017] border-[#D4A017]/20";
-    else if (s.includes('NOT') || s.includes('INVALID')) styles = "bg-zinc-500/10 text-zinc-400 border-zinc-500/20";
+    else if (s.includes('MC') || s.includes('MARGIN CALL')) styles = "bg-amber-500/10 text-amber-400 border-rose-500/20";
+    else if (s.includes('VALID VIP') && !s.includes('INDICATOR')) styles = "bg-emerald-500/10 text-emerald-400 border-emerald-500/20";
+    else if (s.includes('VIP INDICATOR')) styles = "bg-blue-500/10 text-blue-400 border-blue-500/20";
+    else if (s.includes('NOT') || s.includes('INVALID')) styles = "bg-rose-500/10 text-rose-400 border-rose-500/20";
 
     return (
       <span className={`px-2 py-0.5 rounded-xs border text-[8px] font-bold tracking-tighter uppercase ${styles}`}>
