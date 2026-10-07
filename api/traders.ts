@@ -43,17 +43,36 @@ async function fetchGAS(url: string) {
 }
 
 async function fetchSupabaseMY() {
-  const { data, error } = await supabase
-    .from('vip_clients')
-    .select('*')
-    .order('id', { ascending: false });
+  let allRecords: any[] = [];
+  let from = 0;
+  const step = 1000;
+  let hasMore = true;
 
-  if (error) {
-    console.error('Supabase fetch error:', error);
-    throw new Error(error.message);
+  while (hasMore) {
+    const { data, error } = await supabase
+      .from('vip_clients')
+      .select('*')
+      .order('id', { ascending: false })
+      .range(from, from + step - 1);
+
+    if (error) {
+      console.error('Supabase fetch error:', error);
+      throw new Error(error.message);
+    }
+
+    if (data && data.length > 0) {
+      allRecords = allRecords.concat(data);
+      if (data.length < step) {
+        hasMore = false;
+      } else {
+        from += step;
+      }
+    } else {
+      hasMore = false;
+    }
   }
 
-  return data || [];
+  return allRecords;
 }
 
 function normalize(raw: any, country: 'MY' | 'ID', index: number) {
