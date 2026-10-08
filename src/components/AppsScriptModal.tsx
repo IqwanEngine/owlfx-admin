@@ -369,7 +369,7 @@ function addVIPRecord(data) {
 
         {/* Footer */}
         <div className="bg-[#0A0A0F] px-4 py-2.5 border-t border-[#3E2D17] flex justify-between items-center text-[9px] text-[#71717A]">
-          <span>Signature: /* Powered by IqwanEngine */</span>
+          <span>Signature: Powered by IqwanEngine </span>
           <button
             onClick={onClose}
             className="px-3 py-1 bg-[#050505] border border-[#3E2D17] text-white hover:border-[#D4A017] rounded-xs cursor-pointer uppercase transition-colors"

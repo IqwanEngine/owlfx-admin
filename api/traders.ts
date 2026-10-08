@@ -2,22 +2,22 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { createClient } from '@supabase/supabase-js';
 
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://bvmnskyhladousflclkd.supabase.co';
+const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJ2bW5za3lobGFkb3VzZmxjbGtkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTEzODI1MzEsImV4cCI6MjEwNjk1ODUzMX0.UKL4-r0Ogdr3dWLJP6IdxsqxvbaEuk-MDzFbRjqapcY';
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-const MY_ENDPOINT = process.env.GOOGLE_SHEETS_MY_ENDPOINT || process.env.VITE_GOOGLE_SHEETS_MY_ENDPOINT || '';
-const ID_ENDPOINT = process.env.GOOGLE_SHEETS_ID_ENDPOINT || process.env.VITE_GOOGLE_SHEETS_ID_ENDPOINT || '';
+const MY_ENDPOINT = process.env.GOOGLE_SHEETS_MY_ENDPOINT || process.env.VITE_GOOGLE_SHEETS_MY_ENDPOINT || 'https://script.google.com/macros/s/AKfycbxPr5ErC0hvMnxmM477ekAmFis9RAp44OtP55g2eKPsUdc7_bltM5G7ooSS0AFnmvUC/exec';
+const ID_ENDPOINT = process.env.GOOGLE_SHEETS_ID_ENDPOINT || process.env.VITE_GOOGLE_SHEETS_ID_ENDPOINT || 'https://script.google.com/macros/s/AKfycbxK0G2aOhYNy5WalUQjImp4aReiTGfgEEKBR61Q7Lunjm_zCybglbpPU1iVL5J8r--z/exec';
 const ADMIN_KEY = process.env.ADMIN_DASHBOARD_KEY || 'IE_Admin#Gold2026!Master';
 
-function getCleanUrl(endpoint: string) {
+function getCleanUrl(endpoint: string, action = 'fetch') {
   if (!endpoint) return '';
-  return endpoint.split('?')[0] + `?action=fetch&key=${encodeURIComponent(ADMIN_KEY)}`;
+  return endpoint.split('?')[0] + `?action=${action}&key=${encodeURIComponent(ADMIN_KEY)}`;
 }
 
 async function fetchGAS(url: string) {
-  const cleanUrl = getCleanUrl(url);
+  const cleanUrl = getCleanUrl(url, 'fetch');
   if (!cleanUrl) return [];
 
   try {
@@ -26,19 +26,15 @@ async function fetchGAS(url: string) {
       headers: { 'Accept': 'application/json' }
     });
 
-    if (!res.ok) {
-      throw new Error(`GAS fetch failed with status: ${res.status}`);
-    }
+    if (!res.ok) throw new Error(`GAS fetch failed with status: ${res.status}`);
 
     const json = await res.json();
-    if (json && json.success === false) {
-      throw new Error(json.message || 'GAS reported failure');
-    }
+    if (json && json.success === false) throw new Error(json.message || 'GAS reported failure');
 
     return Array.isArray(json.data) ? json.data : Array.isArray(json) ? json : [];
   } catch (err) {
     console.error('GAS Fetch error:', err);
-    throw err;
+    return [];
   }
 }
 
@@ -157,6 +153,50 @@ function normalize(raw: any, country: 'MY' | 'ID', index: number) {
   };
 }
 
+function calculateCountryMetrics(traders: any[], country: 'MY' | 'ID') {
+  const statusCounts = {
+    active: 0,
+    lowBal: 0,
+    mc: 0,
+    notValid: 0,
+    validVip: 0,
+    validVipIndicator: 0,
+    other: 0,
+    total: traders.length
+  };
+
+  const totalBalanceUSD = traders.reduce((acc, trader) => {
+    let rawStr = (trader.balance || "").toString().replace(/,/g, '').trim();
+    let num = parseFloat(rawStr) || 0;
+    const accType = (trader.accountType || "").toLowerCase();
+    const curr = (trader.currency || "").toUpperCase();
+
+    if (accType.includes("cent") || curr === "USC") num = num / 100.0;
+    else if (curr === "IDR") num = num / 15500.0;
+
+    return acc + num;
+  }, 0);
+
+  for (const t of traders) {
+    const s = (t.status || '').trim().toUpperCase();
+    if (s === 'VALID VIP INDICATOR' || s.includes('VIP INDICATOR')) statusCounts.validVipIndicator++;
+    else if (s === 'VALID VIP' || s.includes('VIP')) statusCounts.validVip++;
+    else if (s === 'ACTIVE' || s === 'VALID') statusCounts.active++;
+    else if (s.includes('LOW')) statusCounts.lowBal++;
+    else if (s === 'MC' || s.includes('MARGIN CALL')) statusCounts.mc++;
+    else if (s.includes('NOT') || s.includes('INVALID')) statusCounts.notValid++;
+    else statusCounts.other++;
+  }
+
+  return {
+    country,
+    countryName: country === 'MY' ? 'Malaysia' : 'Indonesia',
+    totalTraders: traders.length,
+    totalBalanceUSD,
+    statusBreakdown: statusCounts
+  };
+}
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
@@ -166,76 +206,91 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(200).end();
   }
 
+  // 1. PENGENDALIAN POST: TICK / VERIFY / UPDATE / DELETE
   if (req.method === 'POST') {
     try {
-      const { action, region, row_index, rowIndex, valetax_id, timestamp, updateData } = req.body;
-      const targetRow = row_index || rowIndex;
+      const body = req.body || {};
+      const targetAction = body.action || (req.url?.includes('verify') ? 'update_col_w' : 'update_col_w');
+      const targetCountry = (body.country || body.region || 'MY').toUpperCase();
+      const targetValetaxId = String(body.valetax_id || body.valetaxId || '').trim();
+      const targetRow = Number(body.row_index || body.rowIndex) || 0;
 
-      if (!action) {
-        return res.status(400).json({ success: false, error: "Tindakan (action) tidak disediakan." });
-      }
+      // Bina format timestamp GMT+8
+      const now = new Date();
+      const formatter = new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'Asia/Kuala_Lumpur',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: false
+      });
+      const parts = formatter.formatToParts(now);
+      const m: Record<string, string> = {};
+      for (const p of parts) m[p.type] = p.value;
+      const gmt8Time = `${m.year}-${m.month}-${m.day} ${m.hour}:${m.minute}:${m.second}`;
+      const finalTimestamp = body.timestamp || gmt8Time;
 
-      // KEMAS KINI SUPABASE (Untuk Wilayah MY)
-      if (region !== 'ID') {
-        if (action === 'delete') {
+      // A. KEMAS KINI SUPABASE (UNTUK MALAYSIA)
+      if (targetCountry !== 'ID' && targetValetaxId && targetValetaxId !== '-') {
+        if (targetAction === 'delete') {
           await supabase
             .from('vip_clients')
             .update({ status: 'Deleted', updated_by: 'Admin System' })
-            .or(`row_index.eq.${targetRow},valetax_id.eq.${valetax_id}`);
-        } else if (action === 'update' && updateData) {
+            .eq('valetax_id', targetValetaxId);
+        } else if (targetAction === 'update' && body.updateData) {
           await supabase
             .from('vip_clients')
-            .update({
-              trader_name: updateData.trader_name,
-              contact_number: updateData.contact_number,
-              register_email: updateData.register_email,
-              trading_view_username: updateData.trading_view_username,
-              valetax_id: updateData.valetax_id,
-              status: updateData.status,
-              updated_by: updateData.updated_by || 'Admin Panel'
-            })
-            .or(`row_index.eq.${targetRow},valetax_id.eq.${valetax_id}`);
-        } else if (action === 'update_col_w' && timestamp) {
+            .update(body.updateData)
+            .eq('valetax_id', targetValetaxId);
+        } else if (targetAction === 'update_col_w' || targetAction === 'verify') {
           await supabase
             .from('vip_clients')
-            .update({ last_update: timestamp })
-            .or(`row_index.eq.${targetRow},valetax_id.eq.${valetax_id}`);
+            .update({ last_update: finalTimestamp })
+            .eq('valetax_id', targetValetaxId);
         }
       }
 
-      // KEMAS KINI GOOGLE SHEETS VIA GAS
-      const endpoint = region === 'ID' ? ID_ENDPOINT : MY_ENDPOINT;
-      const postUrl = getCleanUrl(endpoint, action);
+      // B. KEMAS KINI GOOGLE SHEETS VIA GAS
+      const endpoint = targetCountry === 'ID' ? ID_ENDPOINT : MY_ENDPOINT;
+      if (endpoint) {
+        const cleanBase = endpoint.split('?')[0];
+        const gasGetUrl = `${cleanBase}?action=update_col_w&valetax_id=${encodeURIComponent(targetValetaxId)}&rowIndex=${targetRow}&timestamp=${encodeURIComponent(finalTimestamp)}&key=${encodeURIComponent(ADMIN_KEY)}`;
 
-      let gasData = null;
-      if (postUrl) {
         try {
-          const gasRes = await fetch(postUrl, {
+          await fetch(gasGetUrl, {
+            method: 'GET',
+            headers: { 'User-Agent': 'OwlAlgo-IqwanEngine/2.0' }
+          });
+        } catch (gasErr) {
+          // Fallback POST jika GET gagal
+          await fetch(cleanBase, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              action: action,
-              row_index: targetRow,
+              action: targetAction,
+              valetax_id: targetValetaxId,
               rowIndex: targetRow,
-              valetax_id: valetax_id,
-              timestamp: timestamp,
-              updateData: updateData
+              timestamp: finalTimestamp
             })
-          });
-          gasData = await gasRes.json();
-        } catch (gasErr) {
-          console.error("GAS sync warning:", gasErr);
+          }).catch(() => {});
         }
       }
 
-      return res.status(200).json({ success: true, data: gasData || { synced: true } });
-
+      return res.status(200).json({
+        success: true,
+        updatedTime: finalTimestamp,
+        valetaxId: targetValetaxId,
+        country: targetCountry
+      });
     } catch (err: any) {
       return res.status(500).json({ success: false, error: err.message });
     }
   }
 
-  // HANDLE GET: TARIK DATA
+  // 2. PENGENDALIAN GET: TARIK DATA LENGKAP
   try {
     const region = req.query.region as string;
 
@@ -248,16 +303,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (region === 'MY') {
       const rawMY = await fetchSupabaseMY();
       const myTraders = rawMY.map((r, i) => normalize(r, 'MY', i)).sort(sortFn);
-      return res.status(200).json({ success: true, data: { malaysia: myTraders } });
+      const myMetrics = calculateCountryMetrics(myTraders, 'MY');
+      return res.status(200).json({ success: true, data: { malaysia: myTraders }, metrics: { malaysia: myMetrics } });
     }
 
     if (region === 'ID') {
       const rawID = await fetchGAS(ID_ENDPOINT);
       const idTraders = rawID.map((r, i) => normalize(r, 'ID', i)).sort(sortFn);
-      return res.status(200).json({ success: true, data: { indonesia: idTraders } });
+      const idMetrics = calculateCountryMetrics(idTraders, 'ID');
+      return res.status(200).json({ success: true, data: { indonesia: idTraders }, metrics: { indonesia: idMetrics } });
     }
 
-    // Default: Ambil kedua-dua negara
     const [rawMY, rawID] = await Promise.all([
       fetchSupabaseMY(),
       fetchGAS(ID_ENDPOINT)
@@ -266,12 +322,23 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const myTraders = rawMY.map((r, i) => normalize(r, 'MY', i)).sort(sortFn);
     const idTraders = rawID.map((r, i) => normalize(r, 'ID', i)).sort(sortFn);
 
+    const myMetrics = calculateCountryMetrics(myTraders, 'MY');
+    const idMetrics = calculateCountryMetrics(idTraders, 'ID');
+
     return res.status(200).json({
       success: true,
       timestamp: new Date().toISOString(),
       data: {
         malaysia: myTraders,
         indonesia: idTraders
+      },
+      metrics: {
+        malaysia: myMetrics,
+        indonesia: idMetrics,
+        combined: {
+          totalTraders: myTraders.length + idTraders.length,
+          totalBalanceUSD: myMetrics.totalBalanceUSD + idMetrics.totalBalanceUSD
+        }
       }
     });
   } catch (error: any) {
