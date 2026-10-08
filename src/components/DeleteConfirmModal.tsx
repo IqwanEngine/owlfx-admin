@@ -24,7 +24,7 @@ export const DeleteConfirmModal: React.FC<DeleteConfirmModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-xs font-mono">
-      <div 
+      <div
         className="bg-[#0A0A0F] border border-rose-600/50 w-full max-w-md rounded-sm shadow-[0_0_50px_rgba(225,29,72,0.2)] overflow-hidden animate-in fade-in zoom-in-95 duration-150"
         onClick={(e) => e.stopPropagation()}
       >
@@ -54,7 +54,7 @@ export const DeleteConfirmModal: React.FC<DeleteConfirmModalProps> = ({
 
         {/* Modal Content */}
         <div className="p-4 space-y-3">
-          
+
           <div className="p-3 bg-[#050505] border border-rose-900/30 rounded-sm">
             <p className="text-xs text-[#E2E8F0] leading-relaxed">
               Are you sure you want to delete this trader record from the{' '}
@@ -98,7 +98,9 @@ export const DeleteConfirmModal: React.FC<DeleteConfirmModalProps> = ({
           <div className="flex items-start gap-2 p-2.5 rounded-sm bg-rose-950/20 border border-rose-900/40 text-[9px] text-rose-300">
             <AlertTriangle className="w-3.5 h-3.5 text-rose-400 shrink-0 mt-0.5" />
             <span>
-              This will execute a deletion request on Google Apps Script and remove this row from the active table view immediately.
+              {trader.country === 'MY'
+                ? 'This will update record status to "Deleted" in Database and mark deletion in Google Sheets.'
+                : 'This will execute a soft-delete request on Google Apps Script and remove this row immediately.'}
             </span>
           </div>
 
