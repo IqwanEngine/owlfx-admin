@@ -8,7 +8,7 @@ const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'eyJhbGci
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 const MY_ENDPOINT = process.env.GOOGLE_SHEETS_MY_ENDPOINT || process.env.VITE_GOOGLE_SHEETS_MY_ENDPOINT || 'https://script.google.com/macros/s/AKfycbxPr5ErC0hvMnxmM477ekAmFis9RAp44OtP55g2eKPsUdc7_bltM5G7ooSS0AFnmvUC/exec';
-const ID_ENDPOINT = process.env.GOOGLE_SHEETS_ID_ENDPOINT || process.env.VITE_GOOGLE_SHEETS_ID_ENDPOINT || 'https://script.google.com/macros/s/AKfycbxK0G2aOhYNy5WalUQjImp4aReiTGfgEEKBR61Q7Lunjm_zCybglbpPU1iVL5J8r--z/exec';
+const ID_ENDPOINT = process.env.GOOGLE_SHEETS_ID_ENDPOINT || process.env.VITE_GOOGLE_SHEETS_ID_ENDPOINT || 'https://script.google.com/macros/s/AKfycbK0G2aOhYNy5WalUQjImp4aReiTGfgEEKBR61Q7Lunjm_zCybglbpPU1iVL5J8r--z/exec';
 const ADMIN_KEY = process.env.ADMIN_DASHBOARD_KEY || 'IE_Admin#Gold2026!Master';
 
 function getCleanUrl(endpoint: string, action = 'fetch') {
@@ -210,9 +210,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method === 'POST') {
     try {
       const body = req.body || {};
-      const targetAction = body.action || (req.url?.includes('verify') ? 'update_col_w' : 'update_col_w');
+      const targetAction = body.action || 'update_col_w';
       const targetCountry = (body.country || body.region || 'MY').toUpperCase();
       const targetValetaxId = String(body.valetax_id || body.valetaxId || '').trim();
+      const targetDateOfCreation = String(body.dateOfCreation || body.date_of_creation || '').trim();
       const targetRow = Number(body.row_index || body.rowIndex) || 0;
 
       // Bina format timestamp GMT+8
@@ -233,49 +234,63 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const gmt8Time = `${m.year}-${m.month}-${m.day} ${m.hour}:${m.minute}:${m.second}`;
       const finalTimestamp = body.timestamp || gmt8Time;
 
-      // A. KEMAS KINI SUPABASE (UNTUK MALAYSIA)
-      if (targetCountry !== 'ID' && targetValetaxId && targetValetaxId !== '-') {
+      // ========================================================
+      // A. KEMAS KINI SUPABASE (KHAS UNTUK MALAYSIA SAHAJA)
+      // ========================================================
+      if (targetCountry === 'MY') {
         if (targetAction === 'delete') {
-          await supabase
-            .from('vip_clients')
-            .update({ status: 'Deleted', updated_by: 'Admin System' })
-            .eq('valetax_id', targetValetaxId);
+          let q = supabase.from('vip_clients').update({ status: 'Deleted', updated_by: 'Admin System' });
+          if (targetDateOfCreation && targetDateOfCreation !== '-') {
+            await q.eq('date_of_creation', targetDateOfCreation);
+          } else if (targetValetaxId && targetValetaxId !== '-') {
+            await q.eq('valetax_id', targetValetaxId);
+          }
         } else if (targetAction === 'update' && body.updateData) {
-          await supabase
-            .from('vip_clients')
-            .update(body.updateData)
-            .eq('valetax_id', targetValetaxId);
+          let q = supabase.from('vip_clients').update(body.updateData);
+          if (targetDateOfCreation && targetDateOfCreation !== '-') {
+            await q.eq('date_of_creation', targetDateOfCreation);
+          } else if (targetValetaxId && targetValetaxId !== '-') {
+            await q.eq('valetax_id', targetValetaxId);
+          }
         } else if (targetAction === 'update_col_w' || targetAction === 'verify') {
-          await supabase
-            .from('vip_clients')
-            .update({ last_update: finalTimestamp })
-            .eq('valetax_id', targetValetaxId);
+          let q = supabase.from('vip_clients').update({ last_update: finalTimestamp });
+          // Padan secara unik menggunakan date_of_creation agar pendaftaran berulang tidak tertukar
+          if (targetDateOfCreation && targetDateOfCreation !== '-') {
+            await q.eq('date_of_creation', targetDateOfCreation);
+          } else if (targetValetaxId && targetValetaxId !== '-') {
+            await q.eq('valetax_id', targetValetaxId);
+          }
         }
       }
 
-      // B. KEMAS KINI GOOGLE SHEETS VIA GAS
+      // ========================================================
+      // B. KEMAS KINI GOOGLE SHEETS
+      // Malaysia ke MY_ENDPOINT, manakala Indonesia kekal direct ke ID_ENDPOINT
+      // ========================================================
       const endpoint = targetCountry === 'ID' ? ID_ENDPOINT : MY_ENDPOINT;
       if (endpoint) {
         const cleanBase = endpoint.split('?')[0];
-        const gasGetUrl = `${cleanBase}?action=update_col_w&valetax_id=${encodeURIComponent(targetValetaxId)}&rowIndex=${targetRow}&timestamp=${encodeURIComponent(finalTimestamp)}&key=${encodeURIComponent(ADMIN_KEY)}`;
 
         try {
-          await fetch(gasGetUrl, {
-            method: 'GET',
-            headers: { 'User-Agent': 'OwlAlgo-IqwanEngine/2.0' }
-          });
-        } catch (gasErr) {
-          // Fallback POST jika GET gagal
           await fetch(cleanBase, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               action: targetAction,
               valetax_id: targetValetaxId,
+              valetaxId: targetValetaxId,
+              date_of_creation: targetDateOfCreation,
+              dateOfCreation: targetDateOfCreation,
               rowIndex: targetRow,
-              timestamp: finalTimestamp
+              row_index: targetRow,
+              timestamp: finalTimestamp,
+              updateData: body.updateData
             })
-          }).catch(() => {});
+          });
+        } catch (gasErr: any) {
+          console.warn('[IqwanEngine] GAS POST notice, mencuba fallback GET:', gasErr.message);
+          const gasGetUrl = `${cleanBase}?action=update_col_w&dateOfCreation=${encodeURIComponent(targetDateOfCreation)}&valetax_id=${encodeURIComponent(targetValetaxId)}&rowIndex=${targetRow}&timestamp=${encodeURIComponent(finalTimestamp)}&key=${encodeURIComponent(ADMIN_KEY)}`;
+          fetch(gasGetUrl, { method: 'GET', headers: { 'User-Agent': 'OwlAlgo-IqwanEngine/2.0' } }).catch(() => {});
         }
       }
 
@@ -283,6 +298,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         success: true,
         updatedTime: finalTimestamp,
         valetaxId: targetValetaxId,
+        dateOfCreation: targetDateOfCreation,
         country: targetCountry
       });
     } catch (err: any) {
