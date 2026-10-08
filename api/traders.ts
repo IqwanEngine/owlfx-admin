@@ -2,14 +2,14 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { createClient } from '@supabase/supabase-js';
 
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://bvmnskyhladousflclkd.supabase.co';
-const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJ2bW5za3lobGFkb3VzZmxjbGtkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTEzODI1MzEsImV4cCI6MjEwNjk1ODUzMX0.UKL4-r0Ogdr3dWLJP6IdxsqxvbaEuk-MDzFbRjqapcY';
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-const MY_ENDPOINT = process.env.GOOGLE_SHEETS_MY_ENDPOINT || process.env.VITE_GOOGLE_SHEETS_MY_ENDPOINT || 'https://script.google.com/macros/s/AKfycbxPr5ErC0hvMnxmM477ekAmFis9RAp44OtP55g2eKPsUdc7_bltM5G7ooSS0AFnmvUC/exec';
-const ID_ENDPOINT = process.env.GOOGLE_SHEETS_ID_ENDPOINT || process.env.VITE_GOOGLE_SHEETS_ID_ENDPOINT || 'https://script.google.com/macros/s/AKfycbK0G2aOhYNy5WalUQjImp4aReiTGfgEEKBR61Q7Lunjm_zCybglbpPU1iVL5J8r--z/exec';
-const ADMIN_KEY = process.env.ADMIN_DASHBOARD_KEY || 'IE_Admin#Gold2026!Master';
+const MY_ENDPOINT = process.env.GOOGLE_SHEETS_MY_ENDPOINT || process.env.VITE_GOOGLE_SHEETS_MY_ENDPOINT || '';
+const ID_ENDPOINT = process.env.GOOGLE_SHEETS_ID_ENDPOINT || process.env.VITE_GOOGLE_SHEETS_ID_ENDPOINT || '';
+const ADMIN_KEY = process.env.ADMIN_DASHBOARD_KEY || '';
 
 function getCleanUrl(endpoint: string, action = 'fetch') {
   if (!endpoint) return '';
@@ -216,7 +216,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const targetDateOfCreation = String(body.dateOfCreation || body.date_of_creation || '').trim();
       const targetRow = Number(body.row_index || body.rowIndex) || 0;
 
-      // Bina format timestamp GMT+8
+      // Format timestamp GMT+8
       const now = new Date();
       const formatter = new Intl.DateTimeFormat('en-CA', {
         timeZone: 'Asia/Kuala_Lumpur',
@@ -234,9 +234,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const gmt8Time = `${m.year}-${m.month}-${m.day} ${m.hour}:${m.minute}:${m.second}`;
       const finalTimestamp = body.timestamp || gmt8Time;
 
-      // ========================================================
       // A. KEMAS KINI SUPABASE (KHAS UNTUK MALAYSIA SAHAJA)
-      // ========================================================
       if (targetCountry === 'MY') {
         if (targetAction === 'delete') {
           let q = supabase.from('vip_clients').update({ status: 'Deleted', updated_by: 'Admin System' });
@@ -254,7 +252,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           }
         } else if (targetAction === 'update_col_w' || targetAction === 'verify') {
           let q = supabase.from('vip_clients').update({ last_update: finalTimestamp });
-          // Padan secara unik menggunakan date_of_creation agar pendaftaran berulang tidak tertukar
           if (targetDateOfCreation && targetDateOfCreation !== '-') {
             await q.eq('date_of_creation', targetDateOfCreation);
           } else if (targetValetaxId && targetValetaxId !== '-') {
@@ -263,10 +260,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         }
       }
 
-      // ========================================================
       // B. KEMAS KINI GOOGLE SHEETS
-      // Malaysia ke MY_ENDPOINT, manakala Indonesia kekal direct ke ID_ENDPOINT
-      // ========================================================
       const endpoint = targetCountry === 'ID' ? ID_ENDPOINT : MY_ENDPOINT;
       if (endpoint) {
         const cleanBase = endpoint.split('?')[0];
@@ -288,7 +282,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             })
           });
         } catch (gasErr: any) {
-          console.warn('[IqwanEngine] GAS POST notice, mencuba fallback GET:', gasErr.message);
           const gasGetUrl = `${cleanBase}?action=update_col_w&dateOfCreation=${encodeURIComponent(targetDateOfCreation)}&valetax_id=${encodeURIComponent(targetValetaxId)}&rowIndex=${targetRow}&timestamp=${encodeURIComponent(finalTimestamp)}&key=${encodeURIComponent(ADMIN_KEY)}`;
           fetch(gasGetUrl, { method: 'GET', headers: { 'User-Agent': 'OwlAlgo-IqwanEngine/2.0' } }).catch(() => {});
         }
