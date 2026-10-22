@@ -1,4 +1,10 @@
 {
+  "crons": [
+    {
+      "path": "/api/cron-valetax-sync",
+      "schedule": "*/15 * * * *"
+    }
+  ],
   "rewrites": [
     { "source": "/api/auth/session", "destination": "/api/auth/session" },
     { "source": "/api/(.*)", "destination": "/api/$1" },

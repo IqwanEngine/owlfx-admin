@@ -100,6 +100,7 @@ interface ManualBrokerResult {
   contactNumber: string;
   isLocalMatch: boolean;
   isSynced: boolean;
+  multiAccountNotice?: string;
 }
 
 interface AuditSummary {
@@ -793,9 +794,7 @@ export const AuditStudioModal: React.FC<AuditStudioModalProps> = ({
         calculatedStatus = "DEMO";
         kickDecision = "YELLOW";
       } else if (numBal <= 0) {
-        calculatedStatus = statusBefore.toUpperCase().includes("NOT VALID")
-          ? "NOT VALID"
-          : "MC";
+        calculatedStatus = "MC";
         kickDecision = "RED";
       } else if (numBal < 30.0) {
         calculatedStatus = "LOW BALANCE";
@@ -819,10 +818,12 @@ export const AuditStudioModal: React.FC<AuditStudioModalProps> = ({
         "Trader Manual";
       const contactNumber =
         localMatch?.contactNumber || localMatch?.contact_number || "-";
-      const tvUsername =
+      const tvUsername = (
         localMatch?.tradingViewUsername ||
         localMatch?.trading_view_username ||
-        "-";
+        localMatch?.raw?.trading_view_username ||
+        "-"
+      ).trim();
       const directPartnerEmail =
         rawData.directPartnerEmail ||
         rawData.direct_partner_email ||
@@ -830,8 +831,78 @@ export const AuditStudioModal: React.FC<AuditStudioModalProps> = ({
         localMatch?.direct_partner_email ||
         "-";
 
+      // Multi-Account Cross-Checking Safeguard
+      const lowerTV = tvUsername.toLowerCase();
+      const hasValidTV =
+        tvUsername &&
+        tvUsername !== "-" &&
+        lowerTV !== "username" &&
+        lowerTV !== "n/a" &&
+        lowerTV !== "none" &&
+        lowerTV !== "nil" &&
+        lowerTV !== "null" &&
+        lowerTV !== "undefined";
+
+      let hasOtherActiveAccount = false;
+      let multiAccountNotice: string | undefined = undefined;
+
+      if (hasValidTV) {
+        // Query all peer accounts in traders prop sharing this exact trading_view_username
+        const peerAccounts = traders.filter((t) => {
+          const peerTV = (
+            t.tradingViewUsername ||
+            t.trading_view_username ||
+            t.raw?.trading_view_username ||
+            ""
+          ).trim().toLowerCase();
+          const peerId = String(t.valetaxId || t.valetax_id || "").trim();
+          return peerTV === lowerTV && peerId !== idToSearch;
+        });
+
+        // Evaluate peer statuses: Does this trader possess at least ONE other non-demo account with ACTIVE, VALID VIP, or VALID VIP INDICATOR?
+        for (const peer of peerAccounts) {
+          const peerAccType = String(
+            peer.accountType || peer.account_type || "",
+          ).toLowerCase();
+          const isPeerDemo = peerAccType.includes("demo");
+          if (isPeerDemo) continue;
+
+          let peerBal =
+            typeof peer.balance === "number"
+              ? peer.balance
+              : parseFloat(String(peer.balance || "0").replace(/[^0-9.-]+/g, "")) || 0;
+          const peerCurr = String(peer.currency || "USD").toUpperCase();
+          if (peerAccType.includes("cent") || peerCurr === "USC") {
+            peerBal = peerBal / 100.0;
+          } else if (peerCurr === "IDR") {
+            peerBal = peerBal / 15500.0;
+          }
+
+          const peerStatus = String(peer.status || "").trim().toUpperCase();
+
+          const isPeerValidStatus =
+            peerStatus === "ACTIVE" ||
+            peerStatus === "VALID VIP" ||
+            peerStatus === "VALID VIP INDICATOR" ||
+            peerBal >= 30.0;
+
+          if (isPeerValidStatus) {
+            hasOtherActiveAccount = true;
+            break;
+          }
+        }
+
+        // If trader has at least one other active qualifying account, override kick decision to SAFE
+        if (hasOtherActiveAccount && kickDecision === "RED") {
+          kickDecision = "SAFE";
+          multiAccountNotice = "SELAMAT (Multi-Akaun: Mempunyai akaun aktif lain)";
+        }
+      }
+
       let remark = isDemo ? "Demo Account" : "Live Broker Synced";
-      if (statusBefore.toUpperCase().includes("NOT VALID") && numBal > 0) {
+      if (multiAccountNotice) {
+        remark = multiAccountNotice;
+      } else if (statusBefore.toUpperCase().includes("NOT VALID") && numBal > 0) {
         remark = "Pulih (Akaun Aktif)";
       }
 
@@ -874,6 +945,7 @@ export const AuditStudioModal: React.FC<AuditStudioModalProps> = ({
         contactNumber,
         isLocalMatch: Boolean(localMatch),
         isSynced: false,
+        multiAccountNotice,
       });
 
       // Update in-memory audit rows table immediately
@@ -962,17 +1034,17 @@ export const AuditStudioModal: React.FC<AuditStudioModalProps> = ({
             : parseFloat(String(equity).replace(/[^0-9.-]/g, "")) || 0
           : undefined;
 
-      // Call /api/manual-check with action sync-row (or /api/valetax/sync-row)
+      // Call /api/manual-check with action sync-db
       const res = await fetch("/api/manual-check", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          action: "sync-row",
+          action: "sync-db",
           valetaxId: cleanId,
           balance: cleanNumBal,
           equity: cleanNumEq,
           status,
-          remark: "Manual Sync Live Broker",
+          remark: "Manual Live Sync",
         }),
       });
 
@@ -2207,7 +2279,9 @@ export const AuditStudioModal: React.FC<AuditStudioModalProps> = ({
                         <>
                           <ShieldCheck className="w-4 h-4 text-emerald-400" />
                           <span>
-                            KEPUTUSAN: SELAMAT ({manualCheckResult.status})
+                            {manualCheckResult.multiAccountNotice
+                              ? `KEPUTUSAN: ${manualCheckResult.multiAccountNotice}`
+                              : `KEPUTUSAN: SELAMAT (${manualCheckResult.status})`}
                           </span>
                         </>
                       )}
@@ -2216,6 +2290,24 @@ export const AuditStudioModal: React.FC<AuditStudioModalProps> = ({
                       ⚡ LIVE BROKER API
                     </span>
                   </div>
+
+                  {manualCheckResult.multiAccountNotice && (
+                    <div className="p-3 rounded-xl bg-emerald-950/40 border border-emerald-500/40 text-emerald-300 text-xs flex items-start gap-2.5">
+                      <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+                      <div>
+                        <div className="font-bold text-emerald-200">
+                          Perlindungan Multi-Akaun Diaktifkan
+                        </div>
+                        <div className="text-[11px] text-emerald-400/90 mt-0.5">
+                          Akaun ini berstatus <strong className="text-white">{manualCheckResult.status}</strong>, tetapi trader memiliki sekurang-kurangnya satu akaun aktif lain di bawah ID TradingView{" "}
+                          <strong className="text-amber-300 font-mono">
+                            {manualCheckResult.tradingViewUsername}
+                          </strong>
+                          . Keputusan keseluruhan adalah <strong>SELAMAT</strong>.
+                        </div>
+                      </div>
+                    </div>
+                  )}
 
                   <div className="grid grid-cols-2 gap-2.5 text-[11px]">
                     <div className="p-3 rounded-xl bg-[#080B10] border border-zinc-800">

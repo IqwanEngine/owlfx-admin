@@ -930,6 +930,23 @@ app.all('/api/manual-check', async (req, res) => {
   }
 });
 
+// 5d. Vercel Cron Background Sync (/api/cron-valetax-sync)
+app.all('/api/cron-valetax-sync', async (req, res) => {
+  res.setHeader(
+    'Cache-Control',
+    'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0, s-maxage=0'
+  );
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
+
+  try {
+    const handler = (await import('./api/cron-valetax-sync')).default;
+    return await handler(req as any, res as any);
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 app.post('/api/valetax/sync-row', async (req, res) => {
   try {
     const { syncValetaxRecordToSupabase } = await import('./api/valetax-manual');

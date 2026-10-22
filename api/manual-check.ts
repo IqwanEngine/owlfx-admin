@@ -126,7 +126,8 @@ export async function fetchLiveBrokerAccount(valetaxId: string) {
       cache: "no-store", // 1. Strict cache bypass for Next.js / Node undici
       headers: {
         Accept: "application/json",
-        "User-Agent": "OwlAlgo-AuditStudio/2.0",
+        "User-Agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
         // 2. Strict cache-busting headers
         "Cache-Control": "no-cache, no-store, must-revalidate, max-age=0",
         Pragma: "no-cache",
@@ -243,27 +244,40 @@ export async function syncValetaxRecordToSupabase(payload: {
   remark?: string;
 }) {
   const { valetaxId, balance, equity, status, remark } = payload;
-  const cleanId = String(valetaxId).trim();
+  const cleanId = String(valetaxId || "").trim();
 
   if (!cleanId) {
-    throw new Error("Valetax ID diperlukan untuk sinkronisasi.");
+    throw new Error("Valetax ID is required");
   }
 
-  const updateFields: Record<string, any> = {
+  const updatePayload: Record<string, any> = {
     balance: Number(balance),
     status: String(status),
     last_update: new Date().toISOString(),
+    remark: remark || "Manual Live Sync",
   };
 
-  if (typeof equity === "number") {
-    updateFields.equity = Number(equity);
+  if (typeof equity === "number" && !isNaN(equity)) {
+    updatePayload.equity = Number(equity);
   }
 
-  const { data, error } = await supabase
+  let { data, error } = await supabase
     .from("vip_clients")
-    .update(updateFields)
+    .update(updatePayload)
     .eq("valetax_id", cleanId)
     .select();
+
+  // If the schema cache does not have the 'remark' column, retry without 'remark'
+  if (error && error.message && error.message.includes("remark")) {
+    delete updatePayload.remark;
+    const retry = await supabase
+      .from("vip_clients")
+      .update(updatePayload)
+      .eq("valetax_id", cleanId)
+      .select();
+    data = retry.data;
+    error = retry.error;
+  }
 
   if (error) {
     throw new Error(`Supabase Update Error: ${error.message}`);
@@ -305,23 +319,33 @@ export default async function handler(req: VercelRequest | any, res: VercelRespo
   const action = body.action || query.action;
   const valetaxId = String(body.valetaxId || query.valetaxId || query.login || "").trim();
 
-  // Action 1: On-demand sync to Supabase
+  // Action 1: On-demand sync to Supabase (sync-db or sync-row)
   if (action === "sync-db" || action === "sync-row") {
+    if (!valetaxId) {
+      return res.status(400).json({
+        success: false,
+        error: "Valetax ID is required",
+      });
+    }
+
     try {
       const data = await syncValetaxRecordToSupabase({
         valetaxId,
         balance: body.balance,
         equity: body.equity,
         status: body.status,
-        remark: body.remark,
+        remark: body.remark || "Manual Live Sync",
       });
       return res.status(200).json({
         success: true,
-        message: `Rekod ${valetaxId} berjaya diselaraskan ke Supabase.`,
+        message: "Record synchronized to Supabase",
         data,
       });
     } catch (err: any) {
-      return res.status(500).json({ success: false, error: err.message });
+      return res.status(500).json({
+        success: false,
+        error: err.message,
+      });
     }
   }
 
@@ -329,7 +353,7 @@ export default async function handler(req: VercelRequest | any, res: VercelRespo
   if (!valetaxId) {
     return res.status(400).json({
       success: false,
-      error: "Valetax ID diperlukan.",
+      error: "Valetax ID is required",
     });
   }
 
@@ -360,17 +384,30 @@ export async function POST(request: Request) {
     const valetaxId = String(body.valetaxId || "").trim();
 
     if (body.action === "sync-db" || body.action === "sync-row") {
+      if (!valetaxId) {
+        return new Response(
+          JSON.stringify({ success: false, error: "Valetax ID is required" }),
+          {
+            status: 400,
+            headers: {
+              "Content-Type": "application/json",
+              "Cache-Control": "no-store, no-cache, must-revalidate",
+            },
+          }
+        );
+      }
+
       const synced = await syncValetaxRecordToSupabase({
         valetaxId,
         balance: body.balance,
         equity: body.equity,
         status: body.status,
-        remark: body.remark,
+        remark: body.remark || "Manual Live Sync",
       });
       return new Response(
         JSON.stringify({
           success: true,
-          message: `Rekod ${valetaxId} berjaya diselaraskan ke Supabase.`,
+          message: "Record synchronized to Supabase",
           data: synced,
         }),
         {
@@ -387,7 +424,7 @@ export async function POST(request: Request) {
 
     if (!valetaxId) {
       return new Response(
-        JSON.stringify({ success: false, error: "Valetax ID diperlukan." }),
+        JSON.stringify({ success: false, error: "Valetax ID is required" }),
         {
           status: 400,
           headers: {
