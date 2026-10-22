@@ -2,12 +2,12 @@
 
 import React, { useState } from 'react';
 import { TraderRecord } from '../types';
-import { 
-  X, 
-  Copy, 
-  Check, 
-  Wallet, 
-  User, 
+import {
+  X,
+  Copy,
+  Check,
+  Wallet,
+  User,
   Server,
   MessageCircle,
   ExternalLink
@@ -30,9 +30,16 @@ export const TraderDetailModal: React.FC<TraderDetailModalProps> = ({ trader, on
     setTimeout(() => setCopiedKey(null), 2000);
   };
 
+  const isChecked = Boolean(trader.lastUpdateFormatted && trader.lastUpdateFormatted !== '-' && trader.lastUpdateFormatted !== '');
+  const remark = String(trader.raw?.remark || (trader as any).remark || '').trim();
+  const isAutoSync = remark === "AUTO-VALETAX-SYNC" ||
+    remark.toLowerCase().includes("auto-valetax") ||
+    trader.raw?.synced_by === "cron" ||
+    Boolean(trader.updatedBy && trader.updatedBy.toLowerCase().includes("cron"));
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-150">
-      <div 
+      <div
         className="bg-[#0A0A0F] w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-sm border border-[#3E2D17] shadow-2xl relative font-mono text-xs"
         onClick={(e) => e.stopPropagation()}
       >
@@ -65,7 +72,7 @@ export const TraderDetailModal: React.FC<TraderDetailModalProps> = ({ trader, on
 
         {/* Modal Content Body */}
         <div className="p-4 sm:p-5 space-y-4">
-          
+
           {/* Status Diagnostic Banner */}
           <div className="p-3 bg-[#050505] border border-[#3E2D17] rounded-sm flex flex-col sm:flex-row sm:items-center justify-between gap-2">
             <div>
@@ -126,7 +133,7 @@ export const TraderDetailModal: React.FC<TraderDetailModalProps> = ({ trader, on
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
-              
+
               {/* Register Email */}
               <div className="p-2.5 bg-[#050505] border border-[#3E2D17] rounded-sm flex items-center justify-between">
                 <div className="min-w-0 pr-2">
@@ -242,7 +249,16 @@ export const TraderDetailModal: React.FC<TraderDetailModalProps> = ({ trader, on
               </div>
               <div className="p-2 bg-[#050505] border border-[#3E2D17] rounded-sm">
                 <span className="text-[8px] uppercase text-[#71717A] font-bold block">Updated TIME (Col W)</span>
-                <span className="text-emerald-300 font-semibold">{trader.lastUpdateFormatted}</span>
+                {isChecked ? (
+                  <div className="flex items-center gap-1.5 mt-0.5">
+                    <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${isAutoSync ? 'bg-blue-400' : 'bg-emerald-400'}`} />
+                    <span className={`font-semibold ${isAutoSync ? 'text-blue-400' : 'text-emerald-300'}`}>
+                      {trader.lastUpdateFormatted}
+                    </span>
+                  </div>
+                ) : (
+                  <span className="text-zinc-600 font-bold">-</span>
+                )}
               </div>
             </div>
           </div>

@@ -143,7 +143,10 @@ export async function executeValetaxCronSync(maxBatchSize = 80): Promise<{
     .not("valetax_id", "is", null)
     .neq("valetax_id", "-")
     .neq("valetax_id", "")
-    .order("last_update", { ascending: true, nullsFirst: true })
+    .not("last_update", "is", null) // Halang nilai null
+    .neq("last_update", "")         // Halang nilai kosong
+    .neq("last_update", "-")        // Halang sengkang placeholder
+    .order("last_update", { ascending: true }) // Buang nullsFirst
     .limit(maxBatchSize);
 
   if (error) {

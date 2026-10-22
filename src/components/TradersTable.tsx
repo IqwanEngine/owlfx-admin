@@ -10,7 +10,11 @@ import {
   AlertCircle,
 } from 'lucide-react';
 import { TraderRecord, MultiColumnFilterState } from '../types';
-import { formatCurrency, generateWhatsAppLink } from '../utils/formatters';
+import {
+  formatCurrency,
+  generateWhatsAppLink,
+  formatCleanDate
+} from '../utils/formatters';
 import { TableFilterControl } from './TableFilterControl';
 
 interface TradersTableProps {
@@ -192,7 +196,14 @@ export const TradersTable: React.FC<TradersTableProps> = ({
               currentTraders.map((t) => {
                 if (!t) return null;
                 const isVerifyingThis = verifyingId === t.id;
-                const isChecked = t.lastUpdateFormatted && t.lastUpdateFormatted !== '-' && t.lastUpdateFormatted !== '';
+                const isChecked = Boolean(t.lastUpdateFormatted && t.lastUpdateFormatted !== '-' && t.lastUpdateFormatted !== '');
+
+                // Check if updated via automated Valetax background sync
+                const remark = String(t.raw?.remark || (t as any).remark || '').trim();
+                const isAutoSync = remark === "AUTO-VALETAX-SYNC" ||
+                  remark.toLowerCase().includes("auto-valetax") ||
+                  t.raw?.synced_by === "cron" ||
+                  Boolean(t.updatedBy && t.updatedBy.toLowerCase().includes("cron"));
 
                 return (
                   <tr
@@ -290,8 +301,10 @@ export const TradersTable: React.FC<TradersTableProps> = ({
                     <td className="px-3 py-1.5 whitespace-nowrap">
                       {isChecked ? (
                         <div className="flex items-center gap-1.5">
-                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0" />
-                          <span className="text-emerald-300 font-semibold">{t.lastUpdateFormatted}</span>
+                          <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${isAutoSync ? 'bg-blue-400' : 'bg-emerald-400'}`} />
+                          <span className={`font-semibold ${isAutoSync ? 'text-blue-400' : 'text-emerald-300'}`}>
+                            {t.lastUpdateFormatted}
+                          </span>
                         </div>
                       ) : (
                         <span className="text-zinc-600 font-bold">-</span>

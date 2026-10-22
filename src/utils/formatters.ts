@@ -14,7 +14,7 @@ export function sanitizePhone_(rawPhone: any, region: 'MY' | 'ID' = 'MY'): strin
   let cleaned = String(rawPhone).trim();
   const hasLeadingPlus = cleaned.startsWith('+');
   cleaned = cleaned.replace(/[^\d+]/g, '');
-  
+
   // Ensure only at most one leading '+' exists
   if (cleaned.startsWith('+')) {
     cleaned = '+' + cleaned.substring(1).replace(/\+/g, '');
@@ -190,7 +190,7 @@ export function normalizeTrader(raw: RawTrader, country: 'MY' | 'ID', index: num
 export function calculateTotalBalanceUSD(traders: { balance?: any; accountType?: string; account_type?: string; currency?: string }[]): number {
   return traders.reduce((acc, trader) => {
     let num = sanitizeBalance(trader.balance);
-    
+
     const accType = (trader.accountType || trader.account_type || "").toLowerCase();
     const curr = (trader.currency || "").toUpperCase();
 
@@ -284,11 +284,11 @@ export function isEmailWhitelisted(email: string, allowedEmailsEnv?: string): bo
   const target = email.trim().toLowerCase();
   const rawList = allowedEmailsEnv || '';
   if (!rawList) return false;
-  
+
   const allowed = rawList
     .split(',')
     .map(e => e.trim().toLowerCase())
     .filter(Boolean);
-  
+
   return allowed.includes(target);
 }
