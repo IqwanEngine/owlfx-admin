@@ -1,0 +1,18 @@
+[
+  {
+    "id": "audit_1792674316593",
+    "audit_date": "2026-10-22T13:05:16.593Z",
+    "total_scanned": 100,
+    "total_safe": 90,
+    "total_kicked": 10,
+    "kick_list": {
+      "total_kicked": 10,
+      "kicked_users": [
+        "tv_user1"
+      ]
+    },
+    "notes": "Test Snapshot Dev",
+    "csv_content": "col1,col2\nval1,val2",
+    "created_at": "2026-10-22T13:05:16.593Z"
+  }
+]

@@ -18,81 +18,74 @@ import { AccessDenied403 } from "./components/AccessDenied403";
 import { AuthModal } from "./components/AuthModal";
 import { calculateMetrics, formatLiveTimestamp } from "./utils/formatters";
 import { AlertTriangle, CheckCircle2 } from "lucide-react";
+import { AuditStudioModal } from "./components/AuditStudioModal";
 
 const SYNC_INTERVAL_SECONDS = 60;
 
 export default function App() {
-  // 1. Authentication State
+  // 1. Authentication State with Secure Session Persistence
   const [currentUser, setCurrentUser] = useState<AuthUser | null>(() => {
     try {
-      const saved = localStorage.getItem("owlalgo_user_email");
-      const isConsensusAuth =
+      const rawSession = localStorage.getItem("owlalgo_session");
+      if (rawSession) {
+        const parsed = JSON.parse(rawSession);
+        if (parsed && parsed.expiresAt && Date.now() < parsed.expiresAt && parsed.user) {
+          return parsed.user;
+        }
+      }
+      // Backward compatibility fallback for active session
+      const isLegacyAuth =
         localStorage.getItem("owlfx_auth_session") === "authenticated";
-
-      if (!saved && !isConsensusAuth) return null;
-
-      const email = saved || "admin_session@owlfx.my";
-      return {
-        email: email,
-        name: (email.split("@")[0] || "ADMIN").toUpperCase(),
-        isAuthorized: isConsensusAuth,
-        role: isConsensusAuth ? "Administrator" : "Guest",
-      };
-    } catch (e) {
+      if (isLegacyAuth) {
+        return {
+          name: "SECURED ADMIN",
+          isAuthorized: true,
+          role: "Secured Administrator",
+        };
+      }
+      return null;
+    } catch {
       return null;
     }
   });
 
-  const checkAuth = useCallback(async (email: string) => {
-    if (!email) return;
+  const checkAuth = useCallback(async () => {
     try {
+      const rawSession = localStorage.getItem("owlalgo_session");
+      let token = "";
+      if (rawSession) {
+        try {
+          const parsed = JSON.parse(rawSession);
+          if (parsed.expiresAt && Date.now() > parsed.expiresAt) {
+            localStorage.removeItem("owlalgo_session");
+            localStorage.removeItem("owlfx_auth_session");
+            setCurrentUser(null);
+            return;
+          }
+          token = parsed.token || "";
+        } catch {}
+      }
+
       const res = await fetch(`/api/auth/session`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email }),
+        method: "GET",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {})
+        },
       });
-      if (!res.ok) throw new Error("Auth fetch failed");
+      if (!res.ok) return;
       const data = await res.json();
-
-      const isConsensusAuth =
-        localStorage.getItem("owlfx_auth_session") === "authenticated";
-
-      if (data && data.success) {
+      if (data && data.authenticated && data.user) {
         setCurrentUser(data.user);
-      } else if (isConsensusAuth) {
-        setCurrentUser({
-          email,
-          name: (email.split("@")[0] || "ADMIN").toUpperCase(),
-          isAuthorized: true,
-          role: "Administrator",
-        });
-      } else {
-        setCurrentUser({
-          email,
-          name: (email.split("@")[0] || "GUEST").toUpperCase(),
-          isAuthorized: false,
-          role: "Unauthorized User",
-        });
       }
-    } catch (err) {
-      const isConsensusAuth =
-        localStorage.getItem("owlfx_auth_session") === "authenticated";
-      if (isConsensusAuth) {
-        setCurrentUser({
-          email,
-          name: (email.split("@")[0] || "ADMIN").toUpperCase(),
-          isAuthorized: true,
-          role: "Administrator",
-        });
-      }
+    } catch {
+      // Retain current session on network failure if authorized
     }
   }, []);
 
   useEffect(() => {
-    if (currentUser?.email) {
-      checkAuth(currentUser.email);
-    }
-  }, [checkAuth, currentUser?.email]);
+    checkAuth();
+  }, [checkAuth]);
 
   // Synchronize route URL
   useEffect(() => {
@@ -107,6 +100,7 @@ export default function App() {
   const [isAuthModalOpen, setIsAuthModalOpen] = useState<boolean>(false);
   const [isAppsScriptModalOpen, setIsAppsScriptModalOpen] =
     useState<boolean>(false);
+  const [isAuditModalOpen, setIsAuditModalOpen] = useState<boolean>(false);
 
   // 2. Traders Data State
   const [malaysiaData, setMalaysiaData] = useState<TraderRecord[]>([]);
@@ -369,52 +363,40 @@ export default function App() {
   };
 
   const handleAuthenticate = async (
-    email: string,
-    secondaryEmail?: string,
+    identity: string,
+    passkey?: string,
   ): Promise<boolean> => {
     try {
       const res = await fetch("/api/auth/session", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, secondaryEmail }),
+        body: JSON.stringify({ email: identity, key: passkey }),
       });
       const data = await res.json();
-      const isConsensusAuth =
-        localStorage.getItem("owlfx_auth_session") === "authenticated";
 
-      if ((data && data.success) || isConsensusAuth) {
-        localStorage.setItem("owlalgo_user_email", email);
-        const authUser: AuthUser =
-          data && data.success
-            ? data.user
-            : {
-                email,
-                name: (email.split("@")[0] || "ADMIN").toUpperCase(),
-                isAuthorized: true,
-                role: "Administrator",
-              };
+      if (data && data.success && data.user) {
+        const authUser: AuthUser = data.user;
+        const sessionPayload = {
+          token: data.token || "token_" + Date.now(),
+          expiresAt: data.expiresAt || (Date.now() + 86400000),
+          user: authUser
+        };
+        localStorage.setItem("owlalgo_session", JSON.stringify(sessionPayload));
+        localStorage.setItem("owlfx_auth_session", "authenticated");
         setCurrentUser(authUser);
         return true;
       }
       return false;
-    } catch (e) {
-      const isConsensusAuth =
-        localStorage.getItem("owlfx_auth_session") === "authenticated";
-      if (isConsensusAuth) {
-        localStorage.setItem("owlalgo_user_email", email);
-        setCurrentUser({
-          email,
-          name: (email.split("@")[0] || "ADMIN").toUpperCase(),
-          isAuthorized: true,
-          role: "Administrator",
-        });
-        return true;
-      }
+    } catch {
       return false;
     }
   };
 
   const handleLogout = () => {
+    try {
+      fetch("/api/auth/logout", { method: "POST" }).catch(() => {});
+    } catch {}
+    localStorage.removeItem("owlalgo_session");
     localStorage.removeItem("owlalgo_user_email");
     localStorage.removeItem("owlfx_auth_session");
     setCurrentUser(null);
@@ -619,7 +601,6 @@ export default function App() {
           isOpen={true}
           onClose={() => {}}
           onAuthenticate={handleAuthenticate}
-          currentEmail=""
         />
       </div>
     );
@@ -637,7 +618,6 @@ export default function App() {
           isOpen={isAuthModalOpen}
           onClose={() => setIsAuthModalOpen(false)}
           onAuthenticate={handleAuthenticate}
-          currentEmail={currentUser.email}
         />
       </>
     );
@@ -648,13 +628,14 @@ export default function App() {
       <div className="fixed inset-0 pointer-events-none opacity-5 bg-[radial-gradient(circle_at_50%_-20%,#D4A017,transparent_70%)] z-0" />
       <Header
         latestRegistrationDate={latestRegistrationDate}
-        lastUpdateByEngine={formatLiveTimestamp()}
+        lastUpdateByEngine="ONLINE"
         isSyncing={isSyncing}
         onRefresh={() => fetchTradersData(true)}
         nextSyncSeconds={nextSyncSeconds}
         currentUser={currentUser}
         onOpenAuthModal={() => setIsAuthModalOpen(true)}
         onOpenAppsScriptModal={() => setIsAppsScriptModalOpen(true)}
+        onOpenAuditModal={() => setIsAuditModalOpen(true)}
         onLogout={handleLogout}
       />
       {toastMessage && (
@@ -757,11 +738,16 @@ export default function App() {
         isOpen={isAppsScriptModalOpen}
         onClose={() => setIsAppsScriptModalOpen(false)}
       />
+      {/* Modal Studio Audit 2 Minggu (IqwanEngine) */}
+      <AuditStudioModal
+        isOpen={isAuditModalOpen}
+        onClose={() => setIsAuditModalOpen(false)}
+        traders={malaysiaData}
+      />
       <AuthModal
         isOpen={isAuthModalOpen}
         onClose={() => setIsAuthModalOpen(false)}
         onAuthenticate={handleAuthenticate}
-        currentEmail={currentUser?.email || ""}
       />
     </div>
   );

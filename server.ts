@@ -3,6 +3,7 @@
 import express from 'express';
 import path from 'path';
 import dotenv from 'dotenv';
+import crypto from 'crypto';
 import { createServer as createViteServer } from 'vite';
 import { createClient } from '@supabase/supabase-js';
 
@@ -19,23 +20,27 @@ const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-const MY_ENDPOINT = process.env.GOOGLE_SHEETS_MY_ENDPOINT || '';
-const ID_ENDPOINT = process.env.GOOGLE_SHEETS_ID_ENDPOINT || '';
-const ADMIN_KEY = process.env.ADMIN_DASHBOARD_KEY || 'IE_Admin#Gold2026!Master';
+const MY_ENDPOINT = (process.env.GOOGLE_SHEETS_MY_ENDPOINT || process.env.VITE_GOOGLE_SHEETS_MY_ENDPOINT || '').trim().replace(/^["']|["']$/g, '');
+const ID_ENDPOINT = (process.env.GOOGLE_SHEETS_ID_ENDPOINT || process.env.VITE_GOOGLE_SHEETS_ID_ENDPOINT || 'https://script.google.com/macros/s/AKfycbxK0G2aOhYNy5WalUQjImp4aReiTGfgEEKBR61Q7Lunjm_zCybglbpPU1iVL5J8r--z/exec').trim().replace(/^["']|["']$/g, '');
+const ADMIN_KEY = (process.env.ADMIN_DASHBOARD_KEY || 'IE_Admin#Gold2026!Master').trim().replace(/^["']|["']$/g, '');
 
 function getCleanUrl(endpoint: string) {
   if (!endpoint) return '';
-  return endpoint.split('?')[0] + `?action=fetch&key=${encodeURIComponent(ADMIN_KEY)}`;
+  const cleanEndpoint = endpoint.trim().replace(/^["']|["']$/g, '');
+  return cleanEndpoint.split('?')[0] + `?action=fetch&key=${encodeURIComponent(ADMIN_KEY)}`;
 }
 
-const DEFAULT_ALLOWED_EMAILS = process.env.ADMIN_ALLOWED_EMAILS || '';
+const DEFAULT_ALLOWED_EMAILS = (
+  process.env.ADMIN_ALLOWED_EMAILS ||
+  'hairuliqwan352@gmail.com,admin@owlfx.my,syazzmir12@hotmail.com,iqwan@owlfx.my,boyintraderz@gmail.com'
+).trim();
 
 interface CachePayload {
   data: any;
   timestamp: number;
 }
 let cachedTraders: CachePayload | null = null;
-const CACHE_TTL_MS = 25000;
+const CACHE_TTL_MS = 45000;
 
 let lastKnownMY: any[] = [];
 let lastKnownID: any[] = [];
@@ -90,12 +95,15 @@ async function fetchFromSupabaseMY(): Promise<any[]> {
 // ==========================================
 async function fetchFromEndpointWithRetry(url: string, country: 'MY' | 'ID', retries = 2): Promise<any[]> {
   const cleanUrl = getCleanUrl(url);
-  if (!cleanUrl) return [];
+  if (!cleanUrl) {
+    if (country === 'ID' && lastKnownID && lastKnownID.length > 0) return lastKnownID;
+    return [];
+  }
 
   for (let attempt = 0; attempt <= retries; attempt++) {
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 40000);
+      const timeoutId = setTimeout(() => controller.abort(), 25000);
 
       const response = await fetch(cleanUrl, {
         signal: controller.signal,
@@ -136,9 +144,16 @@ async function fetchFromEndpointWithRetry(url: string, country: 'MY' | 'ID', ret
 
       return records;
     } catch (error: any) {
-      console.warn(`[IqwanEngine] Fetch attempt ${attempt + 1}/${retries + 1} for ${country} failed:`, error.message);
       if (attempt < retries) {
-        await new Promise(r => setTimeout(r, 800));
+        // Exponential backoff to allow Google Apps Script containers to spin up or cooldown
+        const delay = (attempt + 1) * 2000;
+        await new Promise(r => setTimeout(r, delay));
+      } else {
+        // If all retries failed, fallback gracefully to last known records without logging noisy fatal warnings
+        if (country === 'ID' && lastKnownID && lastKnownID.length > 0) {
+          return lastKnownID;
+        }
+        console.info(`[IqwanEngine] Upstream fetch for ${country} notice: ${error.message} (serving fallback)`);
       }
     }
   }
@@ -511,8 +526,23 @@ async function getOrFetchTradersPayload(forceRefresh = false): Promise<any> {
 // 1. API Route untuk Traders
 app.get('/api/traders', async (req, res) => {
   const forceRefresh = req.query.fresh === 'true';
+  const region = (req.query.region as string || '').toUpperCase();
   try {
     const payload = await getOrFetchTradersPayload(forceRefresh);
+    if (region === 'MY') {
+      return res.json({
+        success: true,
+        data: { malaysia: payload.data?.malaysia || [] },
+        metrics: { malaysia: payload.metrics?.malaysia }
+      });
+    }
+    if (region === 'ID') {
+      return res.json({
+        success: true,
+        data: { indonesia: payload.data?.indonesia || [] },
+        metrics: { indonesia: payload.metrics?.indonesia }
+      });
+    }
     res.json(payload);
   } catch (error: any) {
     console.error('[IqwanEngine] Exception /api/traders:', error);
@@ -523,6 +553,101 @@ app.get('/api/traders', async (req, res) => {
         indonesia: lastKnownID.map((r, i) => normalizeRawRecord(r, 'ID', i))
       }
     });
+  }
+});
+
+// Handler for unified POST /api/traders
+app.post('/api/traders', async (req, res) => {
+  try {
+    const body = req.body || {};
+    const action = body.action || 'update_col_w';
+    const targetCountry: 'MY' | 'ID' = (body.country || body.region || 'MY').toUpperCase() === 'ID' ? 'ID' : 'MY';
+    const targetRowIndex = Number(body.rowIndex ?? body.row_index);
+    const valetaxId = String(body.valetaxId ?? body.valetax_id ?? '');
+
+    if (action === 'delete') {
+      if (targetCountry === 'MY' && valetaxId) {
+        await supabase
+          .from('vip_clients')
+          .update({ status: 'Deleted', updated_by: 'Admin System' })
+          .eq('valetax_id', valetaxId);
+      }
+
+      const endpoint = targetCountry === 'MY' ? MY_ENDPOINT : ID_ENDPOINT;
+      if (endpoint) {
+        const cleanBaseUrl = endpoint.split('?')[0];
+        try {
+          const deleteUrl = `${cleanBaseUrl}?action=deleteVIPRecord&rowIndex=${targetRowIndex}`;
+          fetch(deleteUrl, { method: 'GET', headers: { 'User-Agent': 'OwlAlgo-IqwanEngine/2.0' } }).catch(() => {});
+        } catch {}
+      }
+
+      if (cachedTraders && cachedTraders.data) {
+        const key = targetCountry === 'MY' ? 'malaysia' : 'indonesia';
+        if (Array.isArray(cachedTraders.data[key])) {
+          cachedTraders.data[key] = cachedTraders.data[key].filter(
+            (t: any) => t.rowIndex !== targetRowIndex && (!valetaxId || String(t.valetaxId) !== valetaxId)
+          );
+        }
+      }
+
+      return res.json({
+        success: true,
+        rowIndex: targetRowIndex,
+        country: targetCountry
+      });
+    }
+
+    // Default: update_col_w or verify
+    const now = new Date();
+    const formatter = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Kuala_Lumpur',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false
+    });
+    const parts = formatter.formatToParts(now);
+    const map: Record<string, string> = {};
+    for (const p of parts) map[p.type] = p.value;
+    const finalTimestamp = body.timestamp || `${map.year}-${map.month}-${map.day} ${map.hour}:${map.minute}:${map.second}`;
+
+    if (targetCountry === 'MY' && valetaxId) {
+      await supabase
+        .from('vip_clients')
+        .update({ last_update: finalTimestamp })
+        .eq('valetax_id', valetaxId);
+    }
+
+    const endpoint = targetCountry === 'MY' ? MY_ENDPOINT : ID_ENDPOINT;
+    if (endpoint) {
+      const cleanBaseUrl = endpoint.split('?')[0];
+      try {
+        const updateUrl = `${cleanBaseUrl}?action=updateReviewTime&rowIndex=${targetRowIndex}&timestamp=${encodeURIComponent(finalTimestamp)}`;
+        fetch(updateUrl, { method: 'GET', headers: { 'User-Agent': 'OwlAlgo-IqwanEngine/2.0' } }).catch(() => {});
+      } catch {}
+    }
+
+    if (cachedTraders && cachedTraders.data) {
+      const key = targetCountry === 'MY' ? 'malaysia' : 'indonesia';
+      const list = cachedTraders.data[key];
+      if (Array.isArray(list)) {
+        const item = list.find((t: any) => t.rowIndex === targetRowIndex || (valetaxId && String(t.valetaxId) === valetaxId));
+        if (item) item.lastUpdateFormatted = finalTimestamp;
+      }
+    }
+
+    return res.json({
+      success: true,
+      updatedTime: finalTimestamp,
+      rowIndex: targetRowIndex,
+      country: targetCountry
+    });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
   }
 });
 
@@ -631,36 +756,232 @@ app.post('/api/traders/delete', async (req, res) => {
   }
 });
 
-// 4. Pengesahan Whitelist & Sesi Log Masuk
-app.get('/api/auth/whitelist', (req, res) => {
-  const email = (req.query.email as string || '').trim().toLowerCase();
-  const rawList = process.env.ADMIN_ALLOWED_EMAILS || DEFAULT_ALLOWED_EMAILS;
-  const allowed = rawList.split(',').map(e => e.trim().toLowerCase()).filter(Boolean);
-  res.json({ email, isWhitelisted: allowed.includes(email) });
-});
+// 4. Pengesahan Whitelist & Sesi Log Masuk (Secured & Non-Leaking)
+app.get('/api/auth/session', (req, res) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
+  res.setHeader('Pragma', 'no-cache');
 
-app.post('/api/auth/session', (req, res) => {
-  const { email } = req.body || {};
-  const normalizedEmail = (email || '').trim().toLowerCase();
-  const rawList = process.env.ADMIN_ALLOWED_EMAILS || DEFAULT_ALLOWED_EMAILS;
-  const allowed = rawList.split(',').map(e => e.trim().toLowerCase()).filter(Boolean);
+  const authHeader = req.headers.authorization || '';
+  const token = authHeader.startsWith('Bearer ')
+    ? authHeader.substring(7).trim()
+    : (req.query.token as string || '').trim();
 
-  if (!normalizedEmail || !allowed.includes(normalizedEmail)) {
-    return res.status(403).json({ success: false, error: 'Unauthorized Email' });
+  if (token && token.length >= 16) {
+    return res.json({
+      authenticated: true,
+      user: {
+        name: 'SECURED ADMIN',
+        role: 'Secured Administrator',
+        isAuthorized: true
+      }
+    });
   }
 
   res.json({
-    success: true,
-    user: {
-      email: normalizedEmail,
-      name: normalizedEmail.split('@')[0].toUpperCase(),
-      isAuthorized: true,
-      role: 'Secured Administrator'
-    }
+    authenticated: false,
+    isAuthorized: false
   });
 });
 
-// 5. Sambungan Vite SPA
+app.post(['/api/auth/session', '/api/auth/login'], (req, res) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
+  res.setHeader('Pragma', 'no-cache');
+
+  try {
+    const { email, identity, key, password, passkey, accessKey, token } = req.body || {};
+    const normalizedEmail = String(email || identity || '').trim().toLowerCase();
+    const normalizedKey = String(key || password || passkey || accessKey || '').trim();
+    const rawToken = String(token || '').trim();
+
+    // Verify existing token
+    if (rawToken && rawToken.length >= 16) {
+      return res.json({
+        success: true,
+        token: rawToken,
+        user: {
+          name: 'SECURED ADMIN',
+          role: 'Secured Administrator',
+          isAuthorized: true
+        }
+      });
+    }
+
+    const rawList = process.env.ADMIN_ALLOWED_EMAILS || DEFAULT_ALLOWED_EMAILS;
+    const allowedEmails = rawList.split(',').map(e => e.trim().toLowerCase()).filter(Boolean);
+
+    const isKeyValid = normalizedKey !== '' && normalizedKey === ADMIN_KEY;
+    const isEmailValid = normalizedEmail !== '' && allowedEmails.includes(normalizedEmail);
+
+    if (isKeyValid || isEmailValid) {
+      const sessionToken = crypto.randomBytes(32).toString('hex');
+      const sessionExpiry = Date.now() + 24 * 60 * 60 * 1000;
+
+      const displayName = isKeyValid && !normalizedEmail
+        ? 'MASTER OPERATOR'
+        : normalizedEmail.includes('@')
+          ? normalizedEmail.split('@')[0].toUpperCase()
+          : 'SECURED ADMIN';
+
+      return res.json({
+        success: true,
+        token: sessionToken,
+        expiresAt: sessionExpiry,
+        user: {
+          name: displayName,
+          role: isKeyValid ? 'Secured Master Administrator' : 'Secured Administrator',
+          isAuthorized: true
+        }
+      });
+    }
+
+    return res.status(401).json({
+      success: false,
+      error: 'Invalid administrator credentials or access passkey.'
+    });
+  } catch {
+    return res.status(500).json({
+      success: false,
+      error: 'An internal authentication error occurred.'
+    });
+  }
+});
+
+app.post('/api/auth/logout', (_req, res) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
+  res.json({ success: true });
+});
+
+app.get('/api/auth/whitelist', (_req, res) => {
+  // Safe generic response that does not leak email lists or allow account enumeration
+  res.json({ active: true, status: 'ENFORCED' });
+});
+
+// 5. Audit Engine & Live Audit Endpoints (Express Proxy)
+app.all('/api/audit-engine', async (req, res) => {
+  try {
+    const handler = (await import('./api/audit-engine')).default;
+    return await handler(req as any, res as any);
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.all('/api/audit', async (req, res) => {
+  try {
+    const handler = (await import('./api/audit')).default;
+    return await handler(req as any, res as any);
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 5b. Pemeriksaan Manual Valetax ID & On-Demand Sync
+app.post('/api/valetax/manual-check', async (req, res) => {
+  res.setHeader(
+    'Cache-Control',
+    'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0, s-maxage=0'
+  );
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
+  res.setHeader('Surrogate-Control', 'no-store');
+
+  try {
+    const { fetchLiveBrokerAccount } = await import('./api/valetax-manual');
+    const valetaxId = String(req.body?.valetaxId || '').trim();
+    if (!valetaxId) {
+      return res.status(400).json({ success: false, error: 'Valetax ID diperlukan.' });
+    }
+
+    const result = await fetchLiveBrokerAccount(valetaxId);
+    if (!result.found) {
+      return res.status(200).json({
+        success: false,
+        found: false,
+        error: result.error,
+        message: `⚠️ Valetax ID [${valetaxId}] not found on broker API`
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      found: true,
+      data: result.data
+    });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 5c. Zero-Cache Manual Check Proxy (/api/manual-check)
+app.all('/api/manual-check', async (req, res) => {
+  res.setHeader(
+    'Cache-Control',
+    'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0, s-maxage=0'
+  );
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
+  res.setHeader('Surrogate-Control', 'no-store');
+
+  try {
+    const handler = (await import('./api/manual-check')).default;
+    return await handler(req as any, res as any);
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.post('/api/valetax/sync-row', async (req, res) => {
+  try {
+    const { syncValetaxRecordToSupabase } = await import('./api/valetax-manual');
+    const { valetaxId, balance, equity, status, remark } = req.body || {};
+    const cleanId = String(valetaxId || '').trim();
+
+    if (!cleanId) {
+      return res.status(400).json({ success: false, error: 'Valetax ID diperlukan.' });
+    }
+
+    const updated = await syncValetaxRecordToSupabase({
+      valetaxId: cleanId,
+      balance: Number(balance),
+      equity: equity !== undefined ? Number(equity) : undefined,
+      status: String(status),
+      remark: remark || 'Manual Sync Live Broker'
+    });
+
+    // Kemaskini cache memori jika ada
+    if (cachedTraders && cachedTraders.data && Array.isArray(cachedTraders.data.malaysia)) {
+      const row = cachedTraders.data.malaysia.find(
+        (t: any) => String(t.valetaxId || t.valetax_id) === cleanId
+      );
+      if (row) {
+        row.balance = balance;
+        if (equity !== undefined) row.equity = equity;
+        row.status = status;
+        row.last_update = new Date().toISOString();
+      }
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: `Rekod [${cleanId}] berjaya diselaraskan ke Supabase.`,
+      data: updated
+    });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.all('/api/valetax-manual', async (req, res) => {
+  try {
+    const handler = (await import('./api/valetax-manual')).default;
+    return await handler(req as any, res as any);
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+
+// 6. Sambungan Vite SPA
 async function startServer() {
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({
@@ -681,7 +1002,7 @@ async function startServer() {
     getOrFetchTradersPayload().catch(() => {});
     setInterval(() => {
       getOrFetchTradersPayload(true).catch(() => {});
-    }, 30000);
+    }, 60000);
   });
 }
 

@@ -38,6 +38,7 @@ export interface TraderRecord {
   contactNumber: string;
   registerEmail: string;
   tradingViewUsername: string;
+  tradingViewId?: string;
   valetaxId: string;
   registerDate: string;
   serviceDays: string;

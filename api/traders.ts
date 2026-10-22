@@ -7,20 +7,23 @@ const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-const MY_ENDPOINT =
+const MY_ENDPOINT = (
   process.env.GOOGLE_SHEETS_MY_ENDPOINT ||
   process.env.VITE_GOOGLE_SHEETS_MY_ENDPOINT ||
-  "";
-const ID_ENDPOINT =
+  ""
+).trim().replace(/^["']|["']$/g, '');
+const ID_ENDPOINT = (
   process.env.GOOGLE_SHEETS_ID_ENDPOINT ||
   process.env.VITE_GOOGLE_SHEETS_ID_ENDPOINT ||
-  "";
-const ADMIN_KEY = process.env.ADMIN_DASHBOARD_KEY || "";
+  "https://script.google.com/macros/s/AKfycbxK0G2aOhYNy5WalUQjImp4aReiTGfgEEKBR61Q7Lunjm_zCybglbpPU1iVL5J8r--z/exec"
+).trim().replace(/^["']|["']$/g, '');
+const ADMIN_KEY = (process.env.ADMIN_DASHBOARD_KEY || "IE_Admin#Gold2026!Master").trim().replace(/^["']|["']$/g, '');
 
 function getCleanUrl(endpoint: string, action = "fetch") {
   if (!endpoint) return "";
+  const clean = endpoint.trim().replace(/^["']|["']$/g, '');
   return (
-    endpoint.split("?")[0] +
+    clean.split("?")[0] +
     `?action=${action}&key=${encodeURIComponent(ADMIN_KEY)}`
   );
 }
@@ -246,11 +249,206 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(200).end();
   }
 
-  // 1. PENGENDALIAN POST: TICK / VERIFY / UPDATE / DELETE
+  // =========================================================================
+  // 1. PENGENDALIAN POST: TICK / VERIFY / UPDATE / DELETE / AUDIT ENGINE
+  // =========================================================================
   if (req.method === "POST") {
     try {
       const body = req.body || {};
       const targetAction = body.action || "update_col_w";
+
+      // =========================================================================
+      // IQWANENGINE v4.0: 2-WEEK INSTITUTIONAL AUDIT ENGINE HANDLER
+      // =========================================================================
+      if (targetAction === "audit_engine") {
+        const allTraders = await fetchSupabaseMY(); // Tarik semua rekod siap pagination
+
+        const tvGroup: Record<string, any[]> = {};
+        allTraders.forEach((t) => {
+          const tvUser = (
+            t.trading_view_username ||
+            t.tradingViewUsername ||
+            ""
+          ).trim();
+          if (!tvUser || tvUser === "-" || tvUser.toLowerCase() === "username")
+            return;
+          if (!tvGroup[tvUser]) tvGroup[tvUser] = [];
+          tvGroup[tvUser].push(t);
+        });
+
+        const detailedRows: any[] = [];
+        const kickListForScript: string[] = [];
+
+        Object.keys(tvGroup).forEach((tvUser) => {
+          const accounts = tvGroup[tvUser];
+
+          const validAccounts = accounts.filter((acc) => {
+            const s = (acc.status || "").trim().toUpperCase();
+            const type = (acc.account_type || acc.accountType || "")
+              .trim()
+              .toLowerCase();
+            return (
+              !type.includes("demo") &&
+              (s === "ACTIVE" ||
+                s === "LOW BALANCE" ||
+                s === "VALID VIP" ||
+                s === "VALID VIP INDICATOR")
+            );
+          });
+
+          const onlyHasDemo = accounts.every((acc) => {
+            const type = (acc.account_type || acc.accountType || "")
+              .trim()
+              .toLowerCase();
+            return type.includes("demo");
+          });
+
+          let overallDecision: "RED" | "YELLOW" | "SAFE" = "SAFE";
+          if (validAccounts.length === 0) {
+            overallDecision = onlyHasDemo ? "YELLOW" : "RED";
+            kickListForScript.push(tvUser);
+          }
+
+          accounts.forEach((acc) => {
+            let numBal =
+              typeof acc.balance === "number"
+                ? acc.balance
+                : parseFloat(String(acc.balance || "0").replace(/,/g, "")) || 0;
+            const accType = (
+              acc.account_type ||
+              acc.accountType ||
+              ""
+            ).toLowerCase();
+            const curr = (acc.currency || "USD").toUpperCase();
+
+            if (accType.includes("cent") || curr === "USC")
+              numBal = numBal / 100.0;
+            else if (curr === "IDR") numBal = numBal / 15500.0;
+
+            const statusBefore = acc.status || "Active";
+            let statusAfter = "ACTIVE";
+            if (numBal <= 0) statusAfter = "MC";
+            else if (numBal < 30.0) statusAfter = "LOW BALANCE";
+            else if (numBal >= 100.0) statusAfter = "VALID VIP INDICATOR";
+            else if (numBal >= 50.0) statusAfter = "VALID VIP";
+
+            let remark = "Normal";
+            if (accType.includes("demo")) {
+              remark = "Demo Account";
+            } else if (numBal > 0 && statusBefore === statusAfter) {
+              remark = "Parking Modal";
+            }
+
+            detailedRows.push({
+              id: acc.id,
+              trader_name: acc.trader_name || acc.traderName || "-",
+              contact_number: acc.contact_number || acc.contactNumber || "-",
+              trading_view_username: tvUser,
+              valetax_id: acc.valetax_id || acc.valetaxId || "-",
+              direct_partner_email:
+                acc.direct_partner_email || acc.directPartnerEmail || "-",
+              balance: numBal.toFixed(2),
+              account_type: acc.account_type || acc.accountType || "-",
+              currency: curr,
+              status_before: statusBefore,
+              status_after: statusAfter,
+              remark: remark,
+              kick_decision: overallDecision,
+            });
+          });
+        });
+
+        const uniqueKickTVs = Array.from(new Set(kickListForScript));
+
+        // Format Skrip TradingView Siap Pakai
+        const generatedScript = `/**
+ * Generated by IqwanEngine — Production Direct API Bulk Revoker
+ * Target Users to Kick: ${uniqueKickTVs.length}
+ */
+(async function IqwanEngine_batchRemoveViaAPI() {
+  "use strict";
+  const ENDPOINT = "https://www.tradingview.com/pine_perm/remove/";
+  const SCRIPT_ID = "PUB;bbda3b9754e1478e95ff80d543b8a6e4";
+  const RATE_LIMIT_MS = 600;
+  const MAX_RETRIES = 3;
+  const rawList = ${JSON.stringify(uniqueKickTVs, null, 2)};
+  const targetUsers = Array.from(new Set(rawList.map(u => u.trim()).filter(Boolean)));
+  function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
+  async function removeOne(username, attempt) {
+    attempt = attempt || 1;
+    try {
+      const payload = new URLSearchParams();
+      payload.append("pine_id", SCRIPT_ID);
+      payload.append("username_recip", username);
+      const res = await fetch(ENDPOINT, {
+        method: "POST",
+        credentials: "include",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+          "Accept": "application/json, text/javascript, */*; q=0.01",
+          "X-Language": "en",
+          "X-Requested-With": "XMLHttpRequest"
+        },
+        body: payload.toString()
+      });
+      if (res.status === 429 && attempt <= MAX_RETRIES) {
+        await sleep(RATE_LIMIT_MS * attempt * 2);
+        return removeOne(username, attempt + 1);
+      }
+      if (!res.ok) return { username, ok: false, status: res.status };
+      return { username, ok: true, status: res.status };
+    } catch (err) {
+      if (attempt <= MAX_RETRIES) {
+        await sleep(RATE_LIMIT_MS * attempt);
+        return removeOne(username, attempt + 1);
+      }
+      return { username, ok: false, error: String(err) };
+    }
+  }
+  console.log("%c[IqwanEngine] Memulakan pemadaman untuk " + targetUsers.length + " pengguna...", "color:#00ff99;font-weight:bold;");
+  for (let i = 0; i < targetUsers.length; i++) {
+    const res = await removeOne(targetUsers[i]);
+    console.log("[" + (i+1) + "/" + targetUsers.length + "] " + targetUsers[i] + " — " + (res.ok ? "BERJAYA DIBUANG" : "GAGAL"));
+    await sleep(RATE_LIMIT_MS);
+  }
+  console.log("%c[IqwanEngine] SELESAI!", "color:#00ffff;font-weight:bold;");
+})();`;
+
+        // Rekod snapshot ke audit_history di Supabase
+        try {
+          await supabase.from("audit_history").insert({
+            total_scanned: detailedRows.length,
+            total_safe: detailedRows.filter((r) => r.kick_decision === "SAFE")
+              .length,
+            total_kicked: uniqueKickTVs.length,
+            kick_list: {
+              total_kicked: uniqueKickTVs.length,
+              kicked_users: uniqueKickTVs,
+            },
+          });
+        } catch (histErr) {
+          console.error("Audit history insert error:", histErr);
+        }
+
+        return res.status(200).json({
+          success: true,
+          summary: {
+            totalAccounts: detailedRows.length,
+            totalSafe: detailedRows.filter((r) => r.kick_decision === "SAFE")
+              .length,
+            totalRedKick: detailedRows.filter((r) => r.kick_decision === "RED")
+              .length,
+            totalYellowKick: detailedRows.filter(
+              (r) => r.kick_decision === "YELLOW",
+            ).length,
+            uniqueKickCount: uniqueKickTVs.length,
+          },
+          detailedRows,
+          generatedScript,
+        });
+      }
+      // =========================================================================
+
       const targetCountry = (body.country || body.region || "MY").toUpperCase();
       const targetValetaxId = String(
         body.valetax_id || body.valetaxId || "",
@@ -332,7 +530,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             }),
           });
         } catch (gasErr: any) {
-          const gasGetUrl = `${cleanBase}?action=update_col_w&dateOfCreation=${encodeURIComponent(targetDateOfCreation)}&valetax_id=${encodeURIComponent(targetValetaxId)}&rowIndex=${targetRow}&timestamp=${encodeURIComponent(finalTimestamp)}&key=${encodeURIComponent(ADMIN_KEY)}`;
+          const gasGetUrl = `${cleanBase}?action=update_col_w&dateOfCreation=${encodeURIComponent(
+            targetDateOfCreation,
+          )}&valetax_id=${encodeURIComponent(
+            targetValetaxId,
+          )}&rowIndex=${targetRow}&timestamp=${encodeURIComponent(
+            finalTimestamp,
+          )}&key=${encodeURIComponent(ADMIN_KEY)}`;
           fetch(gasGetUrl, {
             method: "GET",
             headers: { "User-Agent": "OwlAlgo-IqwanEngine/2.0" },
@@ -352,8 +556,24 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
   }
 
-  // 2. PENGENDALIAN GET: TARIK DATA LENGKAP
+  // =========================================================================
+  // 2. PENGENDALIAN GET: TARIK DATA LENGKAP & SEJARAH AUDIT
+  // =========================================================================
   try {
+    const action = req.query.action as string;
+
+    // Tarik arkib sejarah untuk Modal Studio
+    if (action === "fetch_history" || action === "audit_history") {
+      const { data: histData, error: histErr } = await supabase
+        .from("audit_history")
+        .select("*")
+        .order("audit_date", { ascending: false })
+        .limit(20);
+
+      if (histErr) throw histErr;
+      return res.status(200).json({ success: true, history: histData || [] });
+    }
+
     const region = req.query.region as string;
 
     const sortFn = (a: any, b: any) => {
@@ -366,26 +586,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const rawMY = await fetchSupabaseMY();
       const myTraders = rawMY.map((r, i) => normalize(r, "MY", i)).sort(sortFn);
       const myMetrics = calculateCountryMetrics(myTraders, "MY");
-      return res
-        .status(200)
-        .json({
-          success: true,
-          data: { malaysia: myTraders },
-          metrics: { malaysia: myMetrics },
-        });
+      return res.status(200).json({
+        success: true,
+        data: { malaysia: myTraders },
+        metrics: { malaysia: myMetrics },
+      });
     }
 
     if (region === "ID") {
       const rawID = await fetchGAS(ID_ENDPOINT);
       const idTraders = rawID.map((r, i) => normalize(r, "ID", i)).sort(sortFn);
       const idMetrics = calculateCountryMetrics(idTraders, "ID");
-      return res
-        .status(200)
-        .json({
-          success: true,
-          data: { indonesia: idTraders },
-          metrics: { indonesia: idMetrics },
-        });
+      return res.status(200).json({
+        success: true,
+        data: { indonesia: idTraders },
+        metrics: { indonesia: idMetrics },
+      });
     }
 
     const [rawMY, rawID] = await Promise.all([

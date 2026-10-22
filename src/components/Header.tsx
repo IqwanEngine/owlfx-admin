@@ -1,6 +1,6 @@
 /* Powered by IqwanEngine */
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState } from "react";
 import {
   ShieldCheck,
   RefreshCw,
@@ -11,9 +11,9 @@ import {
   LogOut,
   UserCheck,
   Zap,
-  Activity
-} from 'lucide-react';
-import { AuthUser } from '../types';
+  Activity,
+} from "lucide-react";
+import { AuthUser } from "../types";
 
 interface HeaderProps {
   latestRegistrationDate: string | null;
@@ -24,6 +24,7 @@ interface HeaderProps {
   currentUser: AuthUser | null;
   onOpenAuthModal: () => void;
   onOpenAppsScriptModal: () => void;
+  onOpenAuditModal: () => void; // <-- TAMBAH INI
   onLogout: () => void;
 }
 
@@ -36,23 +37,24 @@ export const Header: React.FC<HeaderProps> = ({
   currentUser,
   onOpenAuthModal,
   onOpenAppsScriptModal,
-  onLogout
+  onOpenAuditModal, // <── Pastikan baris ini ada di sini!
+  onLogout,
 }) => {
-  const [systemTime, setSystemTime] = useState<string>('');
+  const [systemTime, setSystemTime] = useState<string>("");
 
   // Live real-time system clock updating every second
   useEffect(() => {
     const updateTime = () => {
       const now = new Date();
-      const formatted = now.toLocaleString('en-GB', {
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit',
-        hour: '2-digit',
-        minute: '2-digit',
-        second: '2-digit',
+      const formatted = now.toLocaleString("en-GB", {
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
         hour12: false,
-        timeZone: 'Asia/Kuala_Lumpur'
+        timeZone: "Asia/Kuala_Lumpur",
       });
       setSystemTime(`${formatted} MYT`);
     };
@@ -89,7 +91,7 @@ export const Header: React.FC<HeaderProps> = ({
               System Timestamp
             </span>
             <span className="text-white whitespace-nowrap">
-              {systemTime || '2026-08-27 17:52:00 MYT'}
+              {systemTime || "2026-08-27 17:52:00 MYT"}
             </span>
           </div>
 
@@ -98,8 +100,13 @@ export const Header: React.FC<HeaderProps> = ({
             <span className="text-[#D4A017]/60 uppercase text-[8px] tracking-wider font-semibold">
               Latest Reg (MY/ID)
             </span>
-            <span className="text-white uppercase whitespace-nowrap truncate max-w-[200px]" title={latestRegistrationDate || '-'}>
-              {latestRegistrationDate ? latestRegistrationDate.replace(' (MYT)', '') : 'Synchronizing...'}
+            <span
+              className="text-white uppercase whitespace-nowrap truncate max-w-[200px]"
+              title={latestRegistrationDate || "-"}
+            >
+              {latestRegistrationDate
+                ? latestRegistrationDate.replace(" (MYT)", "")
+                : "Synchronizing..."}
             </span>
           </div>
 
@@ -109,29 +116,46 @@ export const Header: React.FC<HeaderProps> = ({
               OWL_ENGINE SYNC ({nextSyncSeconds}s)
             </span>
             <span className="text-[#D4A017] flex items-center gap-1 font-bold">
-              <span className={`w-1.5 h-1.5 bg-[#D4A017] rounded-full ${isSyncing ? 'animate-ping' : 'animate-pulse'}`} />
-              {isSyncing ? 'SYNCING...' : 'ONLINE'}
+              <span
+                className={`w-1.5 h-1.5 bg-[#D4A017] rounded-full ${isSyncing ? "animate-ping" : "animate-pulse"}`}
+              />
+              {isSyncing ? "SYNCING..." : "ONLINE"}
             </span>
           </div>
 
           {/* Apps Script & Refresh Actions */}
           <div className="flex items-center gap-2 md:border-l md:border-[#3E2D17] md:pl-6">
+            {/* ─── 2-WEEK AUDIT BUTTON (HIGHLIGHTED ACTION) ─── */}
+            <button
+              onClick={onOpenAuditModal}
+              title="Buka 2-Week Institutional Audit & Kick Studio"
+              className="group px-2.5 py-1 bg-[#2A1F07] border border-[#D4A017] text-[#D4A017] hover:bg-[#D4A017] hover:text-black rounded-xs text-[9px] font-black uppercase tracking-wider transition-all flex items-center gap-1.5 cursor-pointer shadow-[0_0_10px_rgba(212,160,23,0.25)] hover:shadow-[0_0_15px_rgba(212,160,23,0.45)] active:scale-95"
+            >
+              <Zap className="w-3 h-3 text-[#D4A017] group-hover:text-black transition-colors fill-[#D4A017]/30 group-hover:fill-black" />
+              <span>2-WEEK AUDIT</span>
+            </button>
+            {/* ───────────────────────────────────────────────── */}
+
+            {/* ─── I.E SCRIPT BUTTON ─── */}
             <button
               onClick={onOpenAppsScriptModal}
               title="View or Check IqwanEngine punya coding"
-              className="px-2 py-1 bg-[#1A1408] border border-[#D4A017]/40 text-[#D4A017] hover:bg-[#D4A017] hover:text-black rounded-xs text-[9px] font-bold uppercase transition-colors flex items-center gap-1 cursor-pointer"
+              className="px-2 py-1 bg-[#1A1408] border border-[#D4A017]/40 text-[#D4A017] hover:bg-[#D4A017] hover:text-black rounded-xs text-[9px] font-bold uppercase transition-colors flex items-center gap-1 cursor-pointer active:scale-95"
             >
               <Database className="w-3 h-3" />
               <span className="hidden sm:inline">I.E SCRIPT</span>
             </button>
 
+            {/* ─── REFRESH BUTTON ─── */}
             <button
               onClick={onRefresh}
               disabled={isSyncing}
               title="Manual Force Refresh Data"
-              className="p-1 bg-[#1A1408] border border-[#D4A017]/40 text-[#D4A017] hover:bg-[#D4A017] hover:text-black rounded-xs transition-colors cursor-pointer disabled:opacity-50"
+              className="p-1 bg-[#1A1408] border border-[#D4A017]/40 text-[#D4A017] hover:bg-[#D4A017] hover:text-black rounded-xs transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed active:scale-95"
             >
-              <RefreshCw className={`w-3 h-3 ${isSyncing ? 'animate-spin' : ''}`} />
+              <RefreshCw
+                className={`w-3 h-3 ${isSyncing ? "animate-spin" : ""}`}
+              />
             </button>
           </div>
 
@@ -139,17 +163,18 @@ export const Header: React.FC<HeaderProps> = ({
           {currentUser?.isAuthorized ? (
             <div className="flex items-center gap-2 md:border-l md:border-[#3E2D17] md:pl-6">
               <div className="flex flex-col text-left md:text-right">
-                <span className="text-[#D4A017]/60 uppercase text-[8px] tracking-wider font-semibold">
-                  OWLFX USER
+                <span className="text-emerald-400 uppercase text-[8px] tracking-wider font-semibold flex items-center gap-1 md:justify-end">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                  AUTHENTICATED
                 </span>
-                <span className="text-[#F3C677] text-[10px] font-mono truncate max-w-[130px]" title={currentUser.email}>
-                  {currentUser.email}
+                <span className="text-[#F3C677] text-[10px] font-mono font-bold tracking-wider truncate max-w-[130px]">
+                  {currentUser.name || "SECURED ADMIN"}
                 </span>
               </div>
               <button
                 onClick={onLogout}
-                title="Sign Out / Switch"
-                className="p-1 rounded-sm border border-[#3E2D17] hover:border-red-400 text-[#71717A] hover:text-red-400 transition-colors"
+                title="Sign Out"
+                className="p-1.5 rounded-sm border border-[#3E2D17] hover:border-rose-400 text-[#71717A] hover:text-rose-400 transition-colors cursor-pointer"
               >
                 <LogOut className="w-3 h-3" />
               </button>
