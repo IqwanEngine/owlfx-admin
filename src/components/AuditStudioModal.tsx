@@ -1586,7 +1586,7 @@ export const AuditStudioModal: React.FC<AuditStudioModalProps> = ({
                   </h2>
 
                   <p className="text-xs text-zinc-400 max-w-md mb-8 font-mono leading-relaxed">
-                    Enjin bersedia untuk mengaudit{" "}
+                    Owl Engines ready untuk mengaudit{" "}
                     <strong className="text-amber-400 font-bold">
                       {traders.length} rekod akaun
                     </strong>
@@ -1595,8 +1595,7 @@ export const AuditStudioModal: React.FC<AuditStudioModalProps> = ({
                     <span className="text-red-400 font-semibold">
                       NOT VALID
                     </span>
-                    , serta penjanaan skrip pemadaman TradingView sifar
-                    duplikasi.
+                    , serta pemberian coding remove TradingView Access Manual.
                   </p>
 
                   <div className="grid grid-cols-3 gap-2.5 w-full max-w-md mb-8">
@@ -1605,12 +1604,12 @@ export const AuditStudioModal: React.FC<AuditStudioModalProps> = ({
                         STATUS
                       </div>
                       <div className="text-xs font-bold text-amber-400 font-mono mt-0.5">
-                        Automasi Penuh
+                        Fully Automation
                       </div>
                     </div>
                     <div className="p-2.5 rounded-xl bg-zinc-900/80 border border-zinc-800/80 text-center backdrop-blur-sm">
                       <div className="text-[10px] text-zinc-500 font-mono">
-                        SASARAN
+                        User
                       </div>
                       <div className="text-xs font-bold text-white font-mono mt-0.5">
                         {traders.length} Akaun
@@ -1618,10 +1617,10 @@ export const AuditStudioModal: React.FC<AuditStudioModalProps> = ({
                     </div>
                     <div className="p-2.5 rounded-xl bg-zinc-900/80 border border-zinc-800/80 text-center backdrop-blur-sm">
                       <div className="text-[10px] text-zinc-500 font-mono">
-                        INTEGRITI
+                        I.E Coding
                       </div>
                       <div className="text-xs font-bold text-emerald-400 font-mono mt-0.5">
-                        Sifar Duplikasi
+                        No Duplicate
                       </div>
                     </div>
                   </div>
