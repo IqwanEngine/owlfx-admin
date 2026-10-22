@@ -125,7 +125,7 @@ function evaluateStatus(cleanBal: number): string {
 /**
  * Core Batch Synchronization Worker
  */
-export async function executeValetaxCronSync(maxBatchSize = 200): Promise<{
+export async function executeValetaxCronSync(maxBatchSize = 80): Promise<{
   success: boolean;
   processed: number;
   updated: number;
@@ -134,7 +134,7 @@ export async function executeValetaxCronSync(maxBatchSize = 200): Promise<{
   message?: string;
 }> {
   const startTime = Date.now();
-  const MAX_RUNTIME_MS = 50000; // Leave 10s headroom before the 60s serverless limit
+  const MAX_SAFE_RUNTIME_MS = 22000; // 22 seconds max
 
   // 1. Fetch oldest 200 records by last_update (nullsFirst ensures untouched rows sync first)
   const { data: traders, error } = await supabase
@@ -166,9 +166,9 @@ export async function executeValetaxCronSync(maxBatchSize = 200): Promise<{
 
   for (let i = 0; i < traders.length; i++) {
     // Timeout Safeguard: break early if approaching serverless execution limit
-    if (Date.now() - startTime > MAX_RUNTIME_MS) {
-      console.warn(
-        `[IqwanEngine Cron Sync] Runtime threshold reached (${Date.now() - startTime}ms). Processed ${i}/${traders.length} traders.`
+    if (Date.now() - startTime > MAX_SAFE_RUNTIME_MS) {
+      console.log(
+        `[CRON] Approaching 22s limit, breaking loop early to return 200 OK cleanly. Processed ${i}/${traders.length} traders.`
       );
       break;
     }
@@ -198,9 +198,16 @@ export async function executeValetaxCronSync(maxBatchSize = 200): Promise<{
       const { status: httpStatus, text } = await fetchValetaxIPv4(url);
 
       // 1. Transient network / rate limit / 5xx error
-      // ONLY transient errors are skipped WITHOUT bumping last_update, so they retry next cycle
       if (httpStatus === 429 || httpStatus >= 500) {
-        skippedCount++;
+        // Even on transient errors, we bump last_update to ensure queue rotation
+        await supabase
+          .from("vip_clients")
+          .update({
+            last_update: new Date().toISOString(),
+          })
+          .eq("id", trader.id);
+
+        updatedCount++;
         await sleep(150); // Pause slightly longer on rate limits
         continue;
       }
@@ -315,10 +322,21 @@ export async function executeValetaxCronSync(maxBatchSize = 200): Promise<{
           .eq("id", trader.id);
         updatedCount++;
       }
-    } catch {
-      // ONLY true network failures (e.g. timeout, socket hangup)
-      // are skipped WITHOUT updating last_update, so they will be retried next cycle.
-      skippedCount++;
+    } catch (err) {
+      // Catch network failures (timeout, socket hangup)
+      // Bump last_update even on failure to ensure queue rotation
+      try {
+        await supabase
+          .from("vip_clients")
+          .update({
+            last_update: new Date().toISOString(),
+          })
+          .eq("id", trader.id);
+        updatedCount++;
+      } catch (innerErr) {
+        console.error("[CRON] Failed to update last_update after fetch error:", innerErr);
+        skippedCount++;
+      }
     }
 
     // Gentle pacing delay between broker calls (50ms - 80ms)
@@ -368,7 +386,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   try {
-    const summary = await executeValetaxCronSync(200);
+    const summary = await executeValetaxCronSync(80);
     return res.status(200).json(summary);
   } catch (err: any) {
     console.error("[IqwanEngine Cron Sync Error]", err);
@@ -398,7 +416,7 @@ export async function GET(request: Request) {
   }
 
   try {
-    const summary = await executeValetaxCronSync(200);
+    const summary = await executeValetaxCronSync(80);
     return new Response(JSON.stringify(summary), {
       status: 200,
       headers: {
